@@ -48,7 +48,7 @@ def log_tool_call(db: Session, entry: ToolCallLog) -> None:
                     (conversation_id, user_msg_id, tool_name, args_json,
                      latency_ms, error, tokens_in, tokens_out)
                 VALUES
-                    (:cid::uuid, :umid, :tool, :args::jsonb,
+                    (CAST(:cid AS uuid), :umid, :tool, CAST(:args AS jsonb),
                      :latency, :error, :tin, :tout)
                 """
             ),
@@ -106,7 +106,7 @@ def conversation_funnel(db: Session, conversation_id: str) -> ConversationFunnel
         text(
             """
             SELECT COUNT(*) FROM chat_messages
-            WHERE conversation_id = :cid::uuid AND role = 'user'
+            WHERE conversation_id = CAST(:cid AS uuid) AND role = 'user'
             """
         ),
         {"cid": conversation_id},
@@ -122,7 +122,7 @@ def conversation_funnel(db: Session, conversation_id: str) -> ConversationFunnel
                 COALESCE(SUM(tokens_in), 0)                AS sum_in,
                 COALESCE(SUM(tokens_out), 0)               AS sum_out
             FROM chat_tool_calls
-            WHERE conversation_id = :cid::uuid
+            WHERE conversation_id = CAST(:cid AS uuid)
             """
         ),
         {"cid": conversation_id},

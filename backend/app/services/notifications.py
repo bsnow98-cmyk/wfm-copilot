@@ -52,7 +52,7 @@ class DBSink:
                     """
                     INSERT INTO notifications
                         (recipient, category, source, conversation_id, payload)
-                    VALUES (:r, :cat, :src, :conv::uuid, :payload::jsonb)
+                    VALUES (:r, :cat, :src, CAST(:conv AS uuid), CAST(:payload AS jsonb))
                     RETURNING id
                     """
                 ),
@@ -165,7 +165,7 @@ def mark_read(db: Session, notification_id: str) -> int:
             """
             UPDATE notifications
             SET read_at = NOW()
-            WHERE id = :id::uuid AND read_at IS NULL
+            WHERE id = CAST(:id AS uuid) AND read_at IS NULL
             """
         ),
         {"id": notification_id},

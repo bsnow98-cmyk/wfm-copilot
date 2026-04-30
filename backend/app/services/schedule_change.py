@@ -276,8 +276,8 @@ def apply_change(
                  schedule_id, change_set, before_state, after_state,
                  undo_window_ends_at)
             VALUES
-                (:at, 'demo', :conv::uuid, :umid::uuid,
-                 :sched, :cs::jsonb, :before::jsonb, :after::jsonb,
+                (:at, 'demo', CAST(:conv AS uuid), CAST(:umid AS uuid),
+                 :sched, CAST(:cs AS jsonb), CAST(:before AS jsonb), CAST(:after AS jsonb),
                  :undo_until)
             RETURNING id
             """
@@ -320,7 +320,7 @@ def undo_change(
                 SELECT id, schedule_id, change_set, before_state, after_state,
                        undo_window_ends_at, undone_at
                 FROM schedule_change_log
-                WHERE id = :id::uuid
+                WHERE id = CAST(:id AS uuid)
                 FOR UPDATE
                 """
             ),
@@ -393,8 +393,8 @@ def undo_change(
                  change_set, before_state, after_state,
                  undo_window_ends_at)
             VALUES
-                (:at, 'demo', :conv::uuid, :sched,
-                 :cs::jsonb, :before::jsonb, :after::jsonb,
+                (:at, 'demo', CAST(:conv AS uuid), :sched,
+                 CAST(:cs AS jsonb), CAST(:before AS jsonb), CAST(:after AS jsonb),
                  :undo_until)
             RETURNING id
             """
@@ -413,8 +413,8 @@ def undo_change(
         text(
             """
             UPDATE schedule_change_log
-            SET undone_at = :at, undone_by_log_id = :undo_id::uuid
-            WHERE id = :id::uuid
+            SET undone_at = :at, undone_by_log_id = CAST(:undo_id AS uuid)
+            WHERE id = CAST(:id AS uuid)
             """
         ),
         {"at": undone_at, "undo_id": str(undo_log_id), "id": log_id},

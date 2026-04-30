@@ -156,7 +156,13 @@ def check_tool_registry() -> CheckResult:
 def check_anthropic_roundtrip() -> CheckResult:
     """Make a tiny real API call. Costs a fraction of a cent. Catches
     invalid keys, model-not-available, network blocks before they hit
-    the live demo."""
+    the live demo.
+
+    max_tokens=8 (not 1) so the model has room to emit a text block.
+    With max_tokens=1 the API can return content=[] when the model stops
+    before emitting anything, which makes 'empty content' unreliable.
+    The successful-round-trip signal is a response with valid usage data.
+    """
     from anthropic import Anthropic
 
     from app.config import get_settings
@@ -165,15 +171,21 @@ def check_anthropic_roundtrip() -> CheckResult:
     client = Anthropic(api_key=settings.anthropic_api_key)
     resp = client.messages.create(
         model=settings.anthropic_model,
-        max_tokens=1,
+        max_tokens=8,
         messages=[{"role": "user", "content": "ping"}],
     )
-    if not resp.content:
-        return CheckResult("anthropic_roundtrip", "FAIL", "empty response")
+    if not getattr(resp, "usage", None):
+        return CheckResult("anthropic_roundtrip", "FAIL", "no usage data on response")
+    if resp.usage.input_tokens <= 0:
+        return CheckResult(
+            "anthropic_roundtrip", "FAIL",
+            f"input_tokens={resp.usage.input_tokens} (expected > 0)",
+        )
     return CheckResult(
         "anthropic_roundtrip",
         "PASS",
-        f"model={settings.anthropic_model} tokens_in={resp.usage.input_tokens}",
+        f"model={settings.anthropic_model} "
+        f"in={resp.usage.input_tokens} out={resp.usage.output_tokens}",
     )
 
 

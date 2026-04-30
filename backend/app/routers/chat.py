@@ -109,7 +109,7 @@ class ChatRequest(BaseModel):
 def _ensure_conversation(db: Session, conversation_id: str | None) -> str:
     if conversation_id:
         existing = db.execute(
-            text("SELECT id FROM chat_conversations WHERE id = :id::uuid"),
+            text("SELECT id FROM chat_conversations WHERE id = CAST(:id AS uuid)"),
             {"id": conversation_id},
         ).scalar_one_or_none()
         if existing:
@@ -141,7 +141,7 @@ def _persist_message(
             text(
                 """
                 INSERT INTO chat_messages (conversation_id, role, content, tool_calls)
-                VALUES (:cid::uuid, :role, :content::jsonb, :tc::jsonb)
+                VALUES (CAST(:cid AS uuid), :role, CAST(:content AS jsonb), CAST(:tc AS jsonb))
                 RETURNING id
                 """
             ),
@@ -172,7 +172,7 @@ def _load_history(db: Session, conversation_id: str) -> list[dict[str, Any]]:
                 """
                 SELECT role, content, tool_calls
                 FROM chat_messages
-                WHERE conversation_id = :cid::uuid
+                WHERE conversation_id = CAST(:cid AS uuid)
                 ORDER BY created_at
                 """
             ),
@@ -426,7 +426,7 @@ def get_conversation_funnel(
     conversation_id: str, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     exists = db.execute(
-        text("SELECT 1 FROM chat_conversations WHERE id = :id::uuid"),
+        text("SELECT 1 FROM chat_conversations WHERE id = CAST(:id AS uuid)"),
         {"id": conversation_id},
     ).scalar_one_or_none()
     if not exists:
@@ -444,7 +444,7 @@ def get_conversation(
                 """
                 SELECT id, role, content, tool_calls, created_at
                 FROM chat_messages
-                WHERE conversation_id = :cid::uuid
+                WHERE conversation_id = CAST(:cid AS uuid)
                 ORDER BY created_at
                 """
             ),
@@ -457,7 +457,7 @@ def get_conversation(
         # Conversation row might exist with no messages yet, or might not
         # exist at all. Both look the same to the client; 404 if neither.
         exists = db.execute(
-            text("SELECT 1 FROM chat_conversations WHERE id = :id::uuid"),
+            text("SELECT 1 FROM chat_conversations WHERE id = CAST(:id AS uuid)"),
             {"id": conversation_id},
         ).scalar_one_or_none()
         if not exists:

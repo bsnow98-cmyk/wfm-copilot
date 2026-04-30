@@ -67,7 +67,7 @@ def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyRespons
                 text(
                     """
                     SELECT id, applied_at, schedule_id
-                    FROM schedule_change_log WHERE id = :id::uuid
+                    FROM schedule_change_log WHERE id = CAST(:id AS uuid)
                     """
                 ),
                 {"id": token.consumed_log_id},
@@ -124,7 +124,7 @@ def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyRespons
             text(
                 """
                 SELECT applied_at, before_state, after_state
-                FROM schedule_change_log WHERE id = :id::uuid
+                FROM schedule_change_log WHERE id = CAST(:id AS uuid)
                 """
             ),
             {"id": log_id},
@@ -162,7 +162,7 @@ def list_changes(
     where = "WHERE applied_at >= :since"
     params: dict[str, Any] = {"since": since, "limit": limit}
     if conversation_id:
-        where += " AND conversation_id = :conv::uuid"
+        where += " AND conversation_id = CAST(:conv AS uuid)"
         params["conv"] = conversation_id
 
     rows = (
@@ -218,7 +218,7 @@ def post_undo(log_id: str, db: Session = Depends(get_db)) -> UndoResponse:
             text(
                 """
                 SELECT before_state, after_state, schedule_id, conversation_id
-                FROM schedule_change_log WHERE id = :id::uuid
+                FROM schedule_change_log WHERE id = CAST(:id AS uuid)
                 """
             ),
             {"id": undo_log_id},

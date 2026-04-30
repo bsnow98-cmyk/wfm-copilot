@@ -75,7 +75,7 @@ def issue_token(
                 (token, expires_at, schedule_id, schedule_version, change_set,
                  conversation_id, user_msg_id)
             VALUES
-                (:token, :expires, :sched, :ver, :cs::jsonb, :conv::uuid, :umid::uuid)
+                (:token, :expires, :sched, :ver, CAST(:cs AS jsonb), CAST(:conv AS uuid), CAST(:umid AS uuid))
             """
         ),
         {
@@ -136,7 +136,7 @@ def mark_consumed(db: Session, token: str, log_id: str) -> None:
         text(
             """
             UPDATE chat_apply_tokens
-            SET consumed_at = NOW(), consumed_log_id = :log_id::uuid
+            SET consumed_at = NOW(), consumed_log_id = CAST(:log_id AS uuid)
             WHERE token = :token
             """
         ),
