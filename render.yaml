@@ -1,0 +1,85 @@
+# Render Blueprint — wfm-copilot backend.
+#
+# To deploy:
+#   1. Push this file to main on a Render-connected GitHub repo.
+#   2. Render dashboard → New → Blueprint → pick this repo.
+#   3. Render creates the database first, then the web service. Database
+#      env vars are wired automatically via `fromDatabase` references below.
+#   4. Render will prompt for the two secrets (ANTHROPIC_API_KEY,
+#      WFM_DEMO_PASSWORD) — paste them, deploy.
+#   5. After the first deploy, open the web service's Shell tab and run:
+#        python -m scripts.preflight
+#      All checks should be green except seed_status (will WARN — that's
+#      expected on a fresh DB; fix in the next step).
+#   6. From the same shell, seed:
+#        python -m scripts.seed_agents --multi-skill
+#        python -m scripts.generate_synthetic_data --seed-db --months 6
+#      Re-run preflight to confirm seed_status flips to PASS.
+
+services:
+  - type: web
+    name: wfm-copilot-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+
+    # `starter` is the smallest non-sleeping tier ($7/mo). DO NOT use `free`
+    # for the demo — it sleeps after 15min idle, which means a 30s cold start
+    # the moment a recruiter clicks the URL.
+    plan: starter
+
+    # Auth gate exempts /health so this works even when WFM_DEMO_PASSWORD is set.
+    healthCheckPath: /health
+
+    # Auto-deploy on push to main. Switch to `no` if you want manual control.
+    autoDeploy: true
+
+    envVars:
+      # Secrets — Render prompts for these on first deploy. `sync: false`
+      # means the value is NOT in this YAML (good — it's in git).
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: WFM_DEMO_PASSWORD
+        sync: false
+
+      # Non-secret config.
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - key: LOG_LEVEL
+        value: INFO
+      - key: TOOL_TIMEOUT_SECONDS
+        value: "30"
+
+      # Database wiring — `fromDatabase` references the `databases` block
+      # below. Render fills these in automatically; no manual paste needed.
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: wfm-copilot-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: wfm-copilot-db
+          property: port
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: wfm-copilot-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: wfm-copilot-db
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: wfm-copilot-db
+          property: database
+
+databases:
+  - name: wfm-copilot-db
+    # `starter` is the cheapest paid tier (~$7/mo). The free tier expires
+    # after 90 days — fine for the demo window, swap to starter when that
+    # nears.
+    plan: starter
+    postgresMajorVersion: "16"
+    # IPs allowed to connect. Defaults to "0.0.0.0/0" (any IP) on Render —
+    # tighten if this becomes more than a demo.
+    ipAllowList: []

@@ -1,0 +1,61 @@
+[project]
+name = "wfm-copilot"
+version = "0.2.0"
+description = "AI-native open-source workforce management for contact centers"
+requires-python = ">=3.12"
+dependencies = [
+    # API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",   # for file uploads (CSV ingest)
+
+    # DB
+    "sqlalchemy>=2.0.36",
+    "psycopg[binary]>=3.2",       # binary build = no system libpq needed at runtime
+
+    # Config / validation
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+
+    # Data
+    "pandas>=2.2",
+    "numpy>=2.1",
+
+    # Forecasting (Phase 2 — promoted from optional to core).
+    # statsforecast pulls in numba for JIT-compiled ARIMA fits; first build
+    # of the Docker image takes 3-5 minutes because of this.
+    "statsforecast>=2.0",
+    "scikit-learn>=1.5",
+
+    # Excel export (review-friendly reports).
+    "openpyxl>=3.1",
+
+    # Schedule optimization (Phase 4 — promoted from optional to core).
+    # OR-Tools CP-SAT solver. ~30MB wheel, fast install.
+    "ortools>=9.11",
+
+    # Logging
+    "structlog>=24.4",
+
+    # Phase 6 — LLM copilot. Promoted from optional to core.
+    "anthropic>=0.39",
+]
+
+[project.optional-dependencies]
+# Phase 3 — staffing math (still optional — we implement Erlang C in pure Python).
+staffing = [
+    "pyworkforce>=0.5",
+]
+# Dev tooling.
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",                # for testing FastAPI
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*", "scripts*"]

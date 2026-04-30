@@ -1,0 +1,32 @@
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node (frontend, later)
+node_modules/
+.next/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Data / artifacts
+*.csv
+*.parquet
+data/
+!backend/scripts/sample_data/
