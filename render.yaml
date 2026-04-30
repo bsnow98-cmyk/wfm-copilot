@@ -75,10 +75,11 @@ services:
 
 databases:
   - name: wfm-copilot-db
-    # `starter` is the cheapest paid tier (~$7/mo). The free tier expires
-    # after 90 days — fine for the demo window, swap to starter when that
-    # nears.
-    plan: starter
+    # `basic_256mb` is the cheapest current paid Postgres tier on Render
+    # (~$6/mo, 1GB storage, 7-day backups). `starter` was deprecated for new
+    # databases — Render's current plan names are size-keyed.
+    # Total monthly cost with the `starter` web service: ~$13/mo.
+    plan: basic_256mb
     postgresMajorVersion: "16"
     # IPs allowed to connect. Defaults to "0.0.0.0/0" (any IP) on Render —
     # tighten if this becomes more than a demo.
