@@ -66,8 +66,17 @@ def _password_matches(header: str, expected: str) -> bool:
 
 
 def _unauthorized() -> JSONResponse:
+    # Starlette quirk: when BaseHTTPMiddleware (this class) short-circuits
+    # with a Response, the outer CORSMiddleware doesn't always get a chance
+    # to add CORS headers. Without them, the browser blocks the 401 on a
+    # cross-origin fetch — which masks the auth failure as a CORS error.
+    # Set the CORS headers ourselves so the 401 actually reaches the client.
     return JSONResponse(
         status_code=401,
         content={"detail": "Authentication required."},
-        headers={"WWW-Authenticate": 'Basic realm="WFM Copilot"'},
+        headers={
+            "WWW-Authenticate": 'Basic realm="WFM Copilot"',
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "false",
+        },
     )
