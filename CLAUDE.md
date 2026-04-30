@@ -78,3 +78,58 @@ If a change touches `backend/app/chat/`, `backend/app/tools/`, or system prompts
 - `backend/test/eval_render_assertion.py` — typed renderer mounts, not JsonPretty fallback
 
 Compare against the baseline at `eval/baselines/2026-04-29.jsonl`.
+
+## Deployment (locked 2026-04-30)
+
+| Service | Host | URL | Notes |
+|---|---|---|---|
+| Backend (FastAPI + Postgres) | Render | <https://wfm-copilot-api.onrender.com> | starter web ($7/mo) + free Postgres (90d expiry) |
+| Frontend (Next.js dashboard) | Vercel | <https://wfm-copilot.vercel.app> | hobby tier, free |
+| Repo | GitHub | <https://github.com/bsnow98-cmyk/wfm-copilot> | auto-deploy on push to main (both hosts) |
+
+`render.yaml` at the repo root is the single source of truth for the backend stack — push changes to `main` and Render rebuilds. Vercel auto-detects Next.js with no config needed.
+
+### Required env vars
+
+- `ANTHROPIC_API_KEY` — set in Render via dashboard (`sync: false` in YAML so it never enters git).
+- `WFM_DEMO_PASSWORD` — set in Render. **Must match** the Vercel `NEXT_PUBLIC_DEMO_PASSWORD` exactly. Mismatch produces 401 on every chat call.
+- `ANTHROPIC_MODEL` — defaults to `claude-sonnet-4-6`.
+- Postgres vars wire automatically via `fromDatabase` references in `render.yaml`.
+
+### Pre-flight check
+
+`backend/scripts/preflight.py` is the canonical pre-deploy / post-deploy sanity check. Run it via Render's Shell tab:
+
+```
+python -m scripts.preflight
+```
+
+Verifies: env vars, DB reach, all 11 tables present, tool registry boots with 8 tools, chat-loop persistence round-trips, Anthropic key works, seed status. Exit code = number of FAILs.
+
+### Operational quirks (deploy-time bugs we've already hit — don't re-step on these)
+
+1. **psycopg3 parses `%` as a placeholder** even in `exec_driver_sql`. Migration files use `%` freely in comments ("80%"), which crashes startup migration. Fix: `db_migrate.py` escapes `%` → `%%` before execution. Future migrations should write `%%` in source if a literal `%` is needed.
+2. **SQLAlchemy 2.0 doesn't bind `:name::type`**. The `::` postgres cast operator confuses the parser; use `CAST(:name AS type)` instead. Affects every `:cid::uuid`, `:content::jsonb` pattern. All current code uses CAST; new code must too.
+3. **`BaseHTTPMiddleware` short-circuit responses don't get CORS headers** from the outer CORSMiddleware. The auth gate's 401 sets headers directly via `_unauthorized()`. Any new middleware that returns a Response without `call_next` must do the same.
+4. **`allow_credentials=True` + `allow_origins=["*"]` is invalid.** Browsers reject the combo. We use `allow_credentials=False` and pass auth via `Authorization` headers explicitly.
+5. **Render's `starter` Postgres tier was deprecated** for new databases. Use `free` (90-day expiry) for demos, `basic_256mb` ($6/mo) for non-expiring.
+6. **statsforecast/numba MSTL OOMs the 512MB starter web tier**. Two options: bump to `standard` ($25/mo) for real forecast runs, or synthesize forecast data directly via SQL (`scripts/preflight.py`-adjacent pattern: copy `interval_history` forward 7 days into `forecast_intervals`).
+7. **CP-SAT scheduling solver also won't run on 512MB.** Same workaround applies — synthesize a schedule for the demo, or bump tier.
+8. **Anomaly detection needs `forecast_intervals` aligned to historical dates** (not just future). The `JOIN` requires matching `interval_start` between `forecast_intervals` and `interval_history`. To get non-zero anomalies, backfill `forecast_intervals` for past weeks with values close-but-not-equal to actuals.
+
+### Demo data state (current production)
+
+- 50 active agents with multi-skill mix
+- 15,120 interval_history rows (sales/support/retention, 6 months — `sales` was renamed to `sales_inbound` to match chat suggestion chips)
+- 1 synthetic forecast_runs row (`model_name='demo_synthetic'`) with 392 forecast_intervals
+- 35 anomalies in the table
+- No schedules (CP-SAT couldn't run on starter; synthesize if needed for the gantt demo)
+
+### Recording the demo (cherry-pick G)
+
+The chat panel works end-to-end. Suggested flow:
+1. Open the live URL fresh
+2. Click "Show today's forecast for sales_inbound" — produces inline `chart.line`
+3. Try "What anomalies happened this week?" — produces `table` render with monospace ids
+4. Toggle the skill picker (top nav)
+5. ~60 seconds total, capture with Kap or CleanShot, save as GIF, drop at top of README.md.
