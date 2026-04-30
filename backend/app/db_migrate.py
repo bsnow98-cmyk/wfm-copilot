@@ -46,8 +46,13 @@ def run_migrations(engine: Engine) -> list[str]:
         for sql_path in sql_files:
             log.info("Applying migration: %s", sql_path.name)
             sql = sql_path.read_text(encoding="utf-8")
-            # `text()` + `exec_driver_sql` would also work; this is simplest.
-            # Note: psycopg can run multi-statement strings.
+            # psycopg3 always parses '%' as a parameter placeholder marker —
+            # even via exec_driver_sql. Migration files use '%' freely in
+            # comments ("0.8000 = 80%"), so escape every '%' to '%%' before
+            # execution. None of our migrations use '%' as the modulo
+            # operator; if a future one does, write it as '%%' in the SQL
+            # source and document the escape.
+            sql = sql.replace("%", "%%")
             conn.exec_driver_sql(sql)
             applied.append(sql_path.name)
     log.info("Migrations complete (%d files).", len(applied))
