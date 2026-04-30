@@ -247,7 +247,7 @@ def check_chat_loop_can_load_history() -> CheckResult:
         history = _load_history(db, conv_id)
         # Clean up — preflight shouldn't litter the DB.
         db.execute(
-            text("DELETE FROM chat_conversations WHERE id = :id::uuid"),
+            text("DELETE FROM chat_conversations WHERE id = CAST(:id AS uuid)"),
             {"id": conv_id},
         )
         db.commit()
