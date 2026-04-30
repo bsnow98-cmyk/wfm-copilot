@@ -46,11 +46,15 @@ app = FastAPI(
     version="0.6.0",
 )
 
-# Permissive CORS in dev. Tighten before any real deployment.
+# CORS — browsers REJECT a response that combines allow_credentials=True
+# with allow_origins=["*"], so we drop credentials. The frontend uses
+# Authorization headers explicitly (not cookies), so this works without
+# credentials mode. If we ever need cookie-based auth, switch to a
+# concrete origin allowlist instead of toggling credentials back on.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
