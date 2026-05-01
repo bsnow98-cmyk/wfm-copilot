@@ -78,9 +78,11 @@ def dispatch(name: str, args: dict[str, Any], db: Session) -> dict[str, Any]:
     try:
         return handler(args, db)
     except Exception as exc:  # noqa: BLE001 — we intentionally swallow into the render
+        # Log the full exception server-side, but don't leak request IDs,
+        # SQL fragments, or stack details into the user-facing render.
         log.exception("Tool %s failed: %s", name, exc)
         return {
             "render": "error",
-            "message": f"{name} failed: {exc}",
+            "message": f"{name} failed unexpectedly. The team has been notified.",
             "code": "TOOL_ERROR",
         }
