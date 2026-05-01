@@ -14,6 +14,8 @@ SSE event shapes (each `data:` line is JSON):
   {"type":"token","text":"..."}                          — incremental token
   {"type":"tool_call","tool":"get_forecast","args":{}}   — model invoked a tool
   {"type":"tool_result","tool":"get_forecast","result":{...}}  — render-shaped
+  {"type":"truncated","message":"..."}                   — assistant turn cut off at max_tokens
+  {"type":"persistence_warning","role":"...","message":"..."} — DB write failed; one-shot per stream
   {"type":"done","conversation_id":"..."}                — stream ended
   {"type":"error","message":"..."}                       — fatal mid-stream
 """
@@ -295,7 +297,17 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
                     system=SYSTEM_PROMPT,
                     tools=tools_cached,
                     messages=history,
-                    max_tokens=2048,
+                    # 4096 is a deliberate ceiling for the chat loop:
+                    # - Most assistant turns are short (a one-sentence summary
+                    #   after a tool result). 1024 covers that easily.
+                    # - Tool-use turns can be longer when the model reasons
+                    #   before calling a tool. 2048 was hit occasionally per
+                    #   the audit. 4096 leaves headroom without paying for
+                    #   max_tokens we never use.
+                    # - If we ever see `stop_reason: "max_tokens"` in
+                    #   production, the explicit handler below surfaces a
+                    #   `truncated` SSE event so it's visible, not silent.
+                    max_tokens=4096,
                 )
             except (RateLimitError, APIConnectionError, APIStatusError) as exc:
                 # Anthropic SDK builds the stream lazily, so most transient
@@ -402,6 +414,31 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
                 if evt:
                     yield evt
             history.append({"role": "assistant", "content": assistant_blocks})
+
+            if stop_reason == "max_tokens":
+                # The model wanted more space than we gave it. The text we
+                # already emitted is partial — the user sees a sentence cut
+                # off. Surface a distinct event so the frontend can render a
+                # "response truncated" indicator separately from a clean
+                # finish. Persisting still happened above, so the
+                # conversation continues; the user can ask a follow-up.
+                log.warning(
+                    "Chat hit max_tokens (conversation=%s, iteration=%d). "
+                    "Consider raising max_tokens or shortening prompts.",
+                    conversation_id,
+                    _iteration,
+                )
+                yield _sse(
+                    {
+                        "type": "truncated",
+                        "message": (
+                            "The reply was cut off because it ran long. "
+                            "Ask a follow-up to continue."
+                        ),
+                    }
+                )
+                yield _sse({"type": "done", "conversation_id": conversation_id})
+                return
 
             if stop_reason != "tool_use":
                 yield _sse({"type": "done", "conversation_id": conversation_id})

@@ -12,7 +12,8 @@ type SSEEvent =
   | { type: "tool_result"; tool: string; result: ToolResponse }
   | { type: "done"; conversation_id: string }
   | { type: "error"; message: string }
-  | { type: "persistence_warning"; role: string; message: string };
+  | { type: "persistence_warning"; role: string; message: string }
+  | { type: "truncated"; message: string };
 
 export const httpProvider: ChatProvider = {
   async send(req: ChatProviderRequest, handlers: ChatHandlers): Promise<ChatProviderResult> {
@@ -92,6 +93,12 @@ export const httpProvider: ChatProvider = {
             handlers.onError?.(event.message);
             break;
           case "persistence_warning":
+            handlers.onWarning?.(event.message);
+            break;
+          case "truncated":
+            // The assistant turn was cut off at max_tokens. Reuse the
+            // warning channel so the UI shows a soft "response was cut
+            // off" indicator without triggering an error toast.
             handlers.onWarning?.(event.message);
             break;
         }
