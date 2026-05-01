@@ -93,7 +93,7 @@ Compare against the baseline at `eval/baselines/2026-04-29.jsonl`.
 
 - `ANTHROPIC_API_KEY` — set in Render via dashboard (`sync: false` in YAML so it never enters git).
 - `WFM_DEMO_PASSWORD` — set in Render. **Must match** the Vercel `NEXT_PUBLIC_DEMO_PASSWORD` exactly. Mismatch produces 401 on every chat call.
-- `ANTHROPIC_MODEL` — defaults to `claude-sonnet-4-6`.
+- `ANTHROPIC_MODEL` — defaults to `claude-sonnet-4-5-20250929` (dated pin). 4.6 silently no-ops `cache_control`; the chat loop's prompt caching requires 4.5 or earlier. Verified against the API on 2026-05-01.
 - Postgres vars wire automatically via `fromDatabase` references in `render.yaml`.
 
 ### Pre-flight check

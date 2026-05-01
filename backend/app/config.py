@@ -29,7 +29,13 @@ class Settings(BaseSettings):
 
     # Anthropic (Phase 6)
     anthropic_api_key: str | None = Field(None)
-    anthropic_model: str = Field("claude-sonnet-4-6")
+    # Pinned to a dated 4.5 build because Sonnet 4.6 silently no-ops
+    # `cache_control` directives (verified against the API on 2026-05-01).
+    # The chat tool-use loop relies on prompt caching of the system + 8-tool
+    # registry; on 4.6 every iteration re-bills ~2200 tokens of static prefix.
+    # Pin a dated version (not the alias) for production stability — bump
+    # explicitly with eval-suite verification when revisiting.
+    anthropic_model: str = Field("claude-sonnet-4-5-20250929")
 
     # Phase 6 — single shared password gate.
     # Unset = open in dev. Set = required for /chat (and all routes per spec).
