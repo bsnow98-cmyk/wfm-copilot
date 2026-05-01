@@ -14,6 +14,60 @@ import type { ToolResponse } from "../types";
 
 const SERIES_COLORS = ["#0F766E", "#525252", "#A3A3A3"];
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+const YEARMONTH_RE = /^\d{4}-\d{2}$/;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+type XKind = "month" | "date" | "datetime" | "other";
+
+function detectXKind(values: string[]): XKind {
+  if (values.length === 0) return "other";
+  if (values.every((v) => YEARMONTH_RE.test(v))) return "month";
+  if (values.every((v) => ISO_DATE_RE.test(v))) return "date";
+  if (values.every((v) => ISO_DATETIME_RE.test(v))) return "datetime";
+  return "other";
+}
+
+function formatXTick(value: string, kind: XKind, span: number): string {
+  if (kind === "month") {
+    const [y, m] = value.split("-").map(Number);
+    return `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+  }
+  if (kind === "date") {
+    const [y, m, d] = value.split("-").map(Number);
+    if (span > 90) return `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+    return `${MONTHS[m - 1]} ${d}`;
+  }
+  if (kind === "datetime") {
+    const datePart = value.slice(0, 10);
+    const timePart = value.slice(11);
+    // Multi-day hourly: midnight ticks show the day; non-midnight show HH:MM.
+    if (timePart === "00:00") {
+      const [, m, d] = datePart.split("-").map(Number);
+      return `${MONTHS[m - 1]} ${d}`;
+    }
+    return timePart;
+  }
+  return value;
+}
+
+function formatTooltipLabel(value: string, kind: XKind): string {
+  if (kind === "month") {
+    const [y, m] = value.split("-").map(Number);
+    return `${MONTHS[m - 1]} ${y}`;
+  }
+  if (kind === "date") {
+    const [y, m, d] = value.split("-").map(Number);
+    return `${MONTHS[m - 1]} ${d}, ${y}`;
+  }
+  if (kind === "datetime") {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+    return `${MONTHS[m - 1]} ${d}, ${y} ${value.slice(11)}`;
+  }
+  return value;
+}
+
 export function ChartLineRenderer({
   response,
 }: {
@@ -33,6 +87,23 @@ export function ChartLineRenderer({
     return row;
   });
 
+  const kind = detectXKind(xList);
+
+  // Pin ticks to natural boundaries for dense series so labels don't get skipped.
+  let explicitTicks: string[] | undefined;
+  if (kind === "date" && xList.length > 60) {
+    explicitTicks = xList.filter((x) => x.endsWith("-01")); // first of each month
+  } else if (kind === "datetime" && xList.length > 24) {
+    explicitTicks = xList.filter((x) => x.endsWith("T00:00")); // midnight of each day
+  }
+
+  const tickInterval =
+    explicitTicks !== undefined
+      ? 0
+      : xList.length > 12
+        ? Math.max(0, Math.floor(xList.length / 10) - 1)
+        : 0;
+
   return (
     <figure
       className="border border-border-default rounded-md p-4"
@@ -50,6 +121,10 @@ export function ChartLineRenderer({
               stroke="#737373"
               fontSize={12}
               tickLine={false}
+              interval={tickInterval}
+              ticks={explicitTicks}
+              tickFormatter={(v: string) => formatXTick(v, kind, xList.length)}
+              minTickGap={8}
             />
             <YAxis
               stroke="#737373"
@@ -73,6 +148,7 @@ export function ChartLineRenderer({
                 borderRadius: 6,
                 fontSize: 12,
               }}
+              labelFormatter={(v) => formatTooltipLabel(String(v), kind)}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             {response.series.map((s, i) => (
