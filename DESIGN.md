@@ -187,6 +187,40 @@ Every visual decision in this document serves that one line. When in doubt, ask:
 
 ---
 
+## Marketing Surface (landing page only)
+
+Scope: **`/` route only.** The landing page is a single-screen cinematic hero modeled on developer.apple.com — its job is the first impression for hiring managers and WFM managers arriving cold. Every other route (`/forecast`, `/intraday`, `/scenarios`, `/schedule`, and any future app route under `(app)/`) keeps **all** rules above unchanged.
+
+**Relaxed rules — only on `/`:**
+
+| Rule (above) | Relaxation on `/` | Why |
+|---|---|---|
+| `surface = #FFFFFF` | Background is dark (`#0A0A0A`) | Cinematic, brand-forward first impression. White-on-black is the genre |
+| ❌ No gradients | Vertical dark gradient overlay over background SVG | Functional dimming for text legibility, not decorative |
+| ❌ No `rounded-full` | Single primary CTA uses `rounded-full` | Direct Apple-pill reference; the one explicit borrowed pattern |
+| ❌ No hero with stock-photo background | Stylized inline SVG of forecast curves as background | Not a stock photo — a literal abstraction of the product's math, on-brand |
+| Default left-aligned | Centered composition on `/` | Single-screen hero genre; below-the-fold content (none in v1) would return to left-aligned |
+
+**Held rules — even on `/`:**
+- ❌ No purple/violet/indigo
+- ❌ No 3-column feature grid (none — single hero only, one screen)
+- ❌ No icons in colored circles
+- ❌ No emoji as design elements
+- ❌ No `system-ui` / Inter / Roboto (Geist 600 for headline, Geist 400 for subhead)
+- ❌ No decorative blobs / floating shapes
+- ❌ Banned hero copy patterns ("Welcome to...", "Unlock the power of...", "Your all-in-one solution") — headline is the product name, subhead leads with the locked memorable thing
+
+**Composition spec:**
+- Headline: `WFM Copilot`, Geist 600, `text-5xl` (mobile) → `text-7xl` (desktop), white, tracking-tight
+- Subhead: 1 sentence + 1 fragment, Geist 400, `text-base` (mobile) → `text-lg` (desktop), white at 80% opacity, max-width ~640px. First clause is the locked memorable thing verbatim ("The AI shows its math.")
+- CTA: white pill, `rounded-full`, dark text, `Try the demo →` linking to `/forecast`. Single CTA — no secondary action competing
+- Background: inline SVG, three teal forecast-shaped curves on near-black, blurred 2px, opacity 60%, dimmed under a 75% black overlay + bottom-fade gradient
+- Footer: one line of micro-copy — "Open source." + GitHub link. White at 50% opacity. No nav, no socials, no email signup
+
+**Future swap:** the inline SVG background is intended to be replaceable by a real screenshot/recording of the live `/forecast` chart at `public/landing-bg.png` (or `.mp4`). Drop the file; replace `<BackgroundForecast />` with `<img src="/landing-bg.png" />` (or `<video>`). The overlay gradient layer stays.
+
+---
+
 ## Decisions Log
 
 | Date | Decision | Rationale |
@@ -198,6 +232,7 @@ Every visual decision in this document serves that one line. When in doubt, ask:
 | 2026-04-29 | Single accent (#0F766E teal-green) | One color forces hierarchy through type and spacing |
 | 2026-04-29 | Dark mode deferred to v1.1 | Dense numeric data harder to read white-on-black |
 | 2026-04-29 | Three deliberate risks accepted | Mono inline in chat, no avatar, no shadows — all serve "math is the hero" |
+| 2026-05-01 | Marketing surface added at `/` | Cinematic Apple-style hero for hiring-manager first impression; relaxed rules scoped to `/` only, app aesthetic unchanged |
 
 ---
 
