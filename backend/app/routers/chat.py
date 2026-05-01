@@ -25,7 +25,12 @@ import logging
 import time
 from typing import Any
 
-from anthropic import Anthropic
+from anthropic import (
+    Anthropic,
+    APIConnectionError,
+    APIStatusError,
+    RateLimitError,
+)
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -43,6 +48,31 @@ from app.tools import all_definitions, dispatch
 
 log = logging.getLogger("wfm.chat")
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+# Module-level singleton — reusing the HTTP client across streams keeps the
+# connection pool warm and avoids ~50ms client-construction overhead per call.
+# Lazy-init so importing this module doesn't require ANTHROPIC_API_KEY at
+# import time (the eval suites import SYSTEM_PROMPT without setting up env).
+_anthropic_client: Anthropic | None = None
+
+
+def _get_anthropic_client() -> Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=get_settings().anthropic_api_key)
+    return _anthropic_client
+
+
+# Note on retry: the Anthropic SDK builds streaming requests lazily — the
+# network round-trip happens at context-manager ENTRY, not at the
+# `client.messages.stream(...)` call. By the time entry succeeds we're
+# already inside the worker thread, and once any tokens have been emitted
+# to the SSE stream we can't roll back. So "retry" for streaming chat is
+# best-effort only and we don't implement it here. Transient errors are
+# logged with their type, surfaced to the user with a sanitized message,
+# and the conversation must be restarted by the user.
+
 
 async def _dispatch_with_timeout(
     tool_name: str,
@@ -210,7 +240,6 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
     initial handler returns and the StreamingResponse takes over.
     """
     settings = get_settings()
-    client = Anthropic(api_key=settings.anthropic_api_key)
     tools = all_definitions()
 
     persistence_warned = False
@@ -252,32 +281,49 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
             iter_tokens_in: int | None = None
             iter_tokens_out: int | None = None
 
+            # Cache the static prefix (system prompt + tool definitions).
+            # See _open_stream_with_retry's docstring + the 2026-05-01 audit PR
+            # for the full rationale. Cache breakpoint goes on the LAST tool
+            # because system alone (~185 tokens) is below the 1024 minimum.
+            tools_cached = (
+                [*tools[:-1], {**tools[-1], "cache_control": {"type": "ephemeral"}}]
+                if tools else tools
+            )
             try:
-                # Cache the static prefix (system prompt + tool definitions).
-                # Anthropic ephemeral cache (5-min TTL) gives ~90% input-token
-                # cost reduction and ~85% latency reduction on cache hits.
-                # Tool-use loops re-send this prefix on every iteration, so
-                # the savings compound across the conversation.
-                #
-                # Cache breakpoint placement: setting `cache_control` on the
-                # LAST tool definition caches the cumulative prefix
-                # (system + every preceding tool). Putting it on the system
-                # block alone would only cache ~185 tokens (below Anthropic's
-                # 1024-token minimum) — silently no-op. With it on the last
-                # tool, the cached prefix is ~2200+ tokens.
-                tools_cached = (
-                    [*tools[:-1], {**tools[-1], "cache_control": {"type": "ephemeral"}}]
-                    if tools else tools
-                )
-                stream_ctx = client.messages.stream(
+                stream_ctx = _get_anthropic_client().messages.stream(
                     model=settings.anthropic_model,
                     system=SYSTEM_PROMPT,
                     tools=tools_cached,
                     messages=history,
                     max_tokens=2048,
                 )
-            except Exception as exc:  # noqa: BLE001
-                yield _sse({"type": "error", "message": f"Anthropic error: {exc}"})
+            except (RateLimitError, APIConnectionError, APIStatusError) as exc:
+                # Anthropic SDK builds the stream lazily, so most transient
+                # errors won't surface here — they'll surface inside _drain
+                # when we enter the context. This catch is for the rare
+                # construction-time failure (e.g. invalid kwargs).
+                log.exception(
+                    "Anthropic stream construction failed: %s",
+                    type(exc).__name__,
+                )
+                yield _sse(
+                    {
+                        "type": "error",
+                        "message": (
+                            "The model service is temporarily unavailable. "
+                            "Please retry in a moment."
+                        ),
+                    }
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 — terminal errors (auth, validation)
+                log.exception("Anthropic stream construction failed: %s", type(exc).__name__)
+                yield _sse(
+                    {
+                        "type": "error",
+                        "message": "The model service rejected the request.",
+                    }
+                )
                 return
 
             # The Anthropic SDK's `stream` returns a context manager. Run it
@@ -298,8 +344,28 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
                         loop.call_soon_threadsafe(
                             tokens_q.put_nowait, ("final", final)
                         )
+                except (RateLimitError, APIConnectionError, APIStatusError) as exc:
+                    # Transient API error — most likely place to land for
+                    # rate-limits or connection drops since the SDK is lazy.
+                    # Tokens may have already gone out; we can't retry.
+                    log.exception(
+                        "Anthropic stream transient error mid-flight: %s",
+                        type(exc).__name__,
+                    )
+                    loop.call_soon_threadsafe(
+                        tokens_q.put_nowait,
+                        ("error", "The model service is temporarily unavailable. Please retry."),
+                    )
                 except Exception as exc:  # noqa: BLE001
-                    loop.call_soon_threadsafe(tokens_q.put_nowait, ("error", str(exc)))
+                    # Anything else mid-stream — log full detail, sanitize for client.
+                    log.exception(
+                        "Anthropic stream errored mid-flight: %s",
+                        type(exc).__name__,
+                    )
+                    loop.call_soon_threadsafe(
+                        tokens_q.put_nowait,
+                        ("error", "The model stream was interrupted."),
+                    )
 
             asyncio.create_task(asyncio.to_thread(_drain))
 
