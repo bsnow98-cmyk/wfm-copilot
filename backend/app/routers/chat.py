@@ -253,10 +253,26 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
             iter_tokens_out: int | None = None
 
             try:
+                # Cache the static prefix (system prompt + tool definitions).
+                # Anthropic ephemeral cache (5-min TTL) gives ~90% input-token
+                # cost reduction and ~85% latency reduction on cache hits.
+                # Tool-use loops re-send this prefix on every iteration, so
+                # the savings compound across the conversation.
+                #
+                # Cache breakpoint placement: setting `cache_control` on the
+                # LAST tool definition caches the cumulative prefix
+                # (system + every preceding tool). Putting it on the system
+                # block alone would only cache ~185 tokens (below Anthropic's
+                # 1024-token minimum) — silently no-op. With it on the last
+                # tool, the cached prefix is ~2200+ tokens.
+                tools_cached = (
+                    [*tools[:-1], {**tools[-1], "cache_control": {"type": "ephemeral"}}]
+                    if tools else tools
+                )
                 stream_ctx = client.messages.stream(
                     model=settings.anthropic_model,
                     system=SYSTEM_PROMPT,
-                    tools=tools,
+                    tools=tools_cached,
                     messages=history,
                     max_tokens=2048,
                 )

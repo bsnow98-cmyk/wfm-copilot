@@ -44,7 +44,9 @@ services:
 
       # Non-secret config.
       - key: ANTHROPIC_MODEL
-        value: claude-sonnet-4-6
+        # 4.5 dated, not 4-6, because 4-6 doesn't honour cache_control
+        # (silently no-ops). The chat tool-use loop depends on prompt caching.
+        value: claude-sonnet-4-5-20250929
       - key: LOG_LEVEL
         value: INFO
       - key: TOOL_TIMEOUT_SECONDS
