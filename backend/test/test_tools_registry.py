@@ -20,6 +20,18 @@ EXPECTED_TOOLS = {
     "preview_schedule_change",
     "get_skills_coverage",   # Phase 8 stage 2
     "explain_substitution",  # Phase 8 stage 3
+    # Wave 1 — leadership/ops asks expansion
+    "get_intraday_gaps",
+    "get_forecast_accuracy",
+    "explain_sl_miss",
+    "get_top_risks",
+    "get_daily_summary",
+    # Wave 2 — actionable ops asks
+    "recommend_vto",
+    "recommend_ot",
+    "find_shift_coverage",
+    "recommend_skill_rebalance",
+    "get_occupancy",
 }
 
 VALID_RENDERS = {
@@ -67,7 +79,11 @@ def test_dispatch_handler_exception_becomes_error_render() -> None:
     try:
         out = dispatch("get_forecast", {"queue": "x"}, MagicMock())
         assert out["render"] == "error"
-        assert "simulated" in out["message"]
+        # The dispatcher returns a generic message rather than the raw exception
+        # text — keeps SQL fragments / request IDs from leaking to the chat UI.
+        # The full traceback is logged server-side via log.exception.
+        assert "get_forecast" in out["message"]
+        assert "failed" in out["message"]
         assert out["code"] == "TOOL_ERROR"
     finally:
         R["get_forecast"] = original
