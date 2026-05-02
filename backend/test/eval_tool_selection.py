@@ -46,7 +46,13 @@ CASES: list[dict[str, Any]] = [
     },
     # Phase 8 stage 5 — new tools.
     {
-        "prompt": "How is each skill covered today?",
+        # `get_skills_coverage` requires a queue. The previous prompt
+        # ("How is each skill covered today?") was underspecified — the
+        # model correctly asked for clarification instead of guessing,
+        # which is the desired UX. Real users include the queue. Verified
+        # 2026-05-01 against `claude-sonnet-4-5-20250929`: this prompt
+        # routes to `get_skills_coverage` with queue='sales_inbound'.
+        "prompt": "How is each skill covered for sales_inbound today?",
         "expected_tool": "get_skills_coverage",
     },
     {
