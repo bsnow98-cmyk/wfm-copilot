@@ -1,5 +1,5 @@
 """
-Tool registry — Phase 6.
+Tool registry — Phase 6 + Waves 1–4.
 
 Each tool module exports:
 - `definition`: Anthropic SDK tool definition (name, description, input_schema)
@@ -19,91 +19,113 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.tools import (
+    # Phase 6 base
     compare_scenarios,
-    explain_sl_miss,
-    explain_substitution,
-    find_shift_coverage,
     get_anomalies,
-    get_daily_summary,
     get_forecast,
+    get_schedule,
+    get_staffing,
+    preview_schedule_change,
+    # Phase 8
+    explain_substitution,
+    get_skills_coverage,
+    # Wave 1+2 (May 1)
+    explain_sl_miss,
+    find_shift_coverage,
+    get_daily_summary,
     get_forecast_accuracy,
     get_intraday_gaps,
     get_occupancy,
-    get_schedule,
-    get_skills_coverage,
-    get_staffing,
     get_top_risks,
-    preview_schedule_change,
     recommend_ot,
     recommend_skill_rebalance,
     recommend_vto,
+    # Wave 3 — adherence
+    explain_adherence_drop,
+    get_adherence,
+    get_conformance,
+    get_exceptions,
+    # Wave 3 — real-time
+    get_agents_on_aux,
+    get_realtime_alerts,
+    get_realtime_status,
+    recommend_break_shift,
+    # Wave 3 — PTO/leave
+    check_leave_feasibility,
+    get_leave_requests,
+    get_pto_balance,
+    recommend_leave_approval,
+    # Wave 4 — performance
+    get_agent_performance,
+    get_attrition_risk,
+    get_new_hire_progress,
+    get_team_kpis,
+    rank_agents,
+    # Wave 4 — training
+    check_training_impact,
+    get_class_progress,
+    get_skill_certifications,
+    get_training_calendar,
+    recommend_coaching_slot,
 )
 
 log = logging.getLogger("wfm.tools")
 
 ToolHandler = Callable[[dict[str, Any], Session], dict[str, Any]]
 
+_MODULES = [
+    # Phase 6 base
+    get_forecast,
+    get_staffing,
+    get_schedule,
+    get_anomalies,
+    compare_scenarios,
+    preview_schedule_change,
+    # Phase 8
+    get_skills_coverage,
+    explain_substitution,
+    # Wave 1+2
+    get_intraday_gaps,
+    get_forecast_accuracy,
+    explain_sl_miss,
+    get_top_risks,
+    get_daily_summary,
+    recommend_vto,
+    recommend_ot,
+    find_shift_coverage,
+    recommend_skill_rebalance,
+    get_occupancy,
+    # Wave 3 — adherence
+    get_adherence,
+    get_exceptions,
+    explain_adherence_drop,
+    get_conformance,
+    # Wave 3 — real-time
+    get_realtime_status,
+    get_agents_on_aux,
+    get_realtime_alerts,
+    recommend_break_shift,
+    # Wave 3 — PTO/leave
+    get_pto_balance,
+    get_leave_requests,
+    check_leave_feasibility,
+    recommend_leave_approval,
+    # Wave 4 — performance
+    get_agent_performance,
+    rank_agents,
+    get_team_kpis,
+    get_attrition_risk,
+    get_new_hire_progress,
+    # Wave 4 — training
+    get_training_calendar,
+    check_training_impact,
+    recommend_coaching_slot,
+    get_skill_certifications,
+    get_class_progress,
+]
+
 _REGISTRY: dict[str, tuple[dict[str, Any], ToolHandler]] = {
-    get_forecast.definition["name"]: (get_forecast.definition, get_forecast.handler),
-    get_staffing.definition["name"]: (get_staffing.definition, get_staffing.handler),
-    get_schedule.definition["name"]: (get_schedule.definition, get_schedule.handler),
-    get_anomalies.definition["name"]: (get_anomalies.definition, get_anomalies.handler),
-    compare_scenarios.definition["name"]: (
-        compare_scenarios.definition,
-        compare_scenarios.handler,
-    ),
-    preview_schedule_change.definition["name"]: (
-        preview_schedule_change.definition,
-        preview_schedule_change.handler,
-    ),
-    get_skills_coverage.definition["name"]: (
-        get_skills_coverage.definition,
-        get_skills_coverage.handler,
-    ),
-    explain_substitution.definition["name"]: (
-        explain_substitution.definition,
-        explain_substitution.handler,
-    ),
-    get_intraday_gaps.definition["name"]: (
-        get_intraday_gaps.definition,
-        get_intraday_gaps.handler,
-    ),
-    get_forecast_accuracy.definition["name"]: (
-        get_forecast_accuracy.definition,
-        get_forecast_accuracy.handler,
-    ),
-    explain_sl_miss.definition["name"]: (
-        explain_sl_miss.definition,
-        explain_sl_miss.handler,
-    ),
-    get_top_risks.definition["name"]: (
-        get_top_risks.definition,
-        get_top_risks.handler,
-    ),
-    get_daily_summary.definition["name"]: (
-        get_daily_summary.definition,
-        get_daily_summary.handler,
-    ),
-    recommend_vto.definition["name"]: (
-        recommend_vto.definition,
-        recommend_vto.handler,
-    ),
-    recommend_ot.definition["name"]: (
-        recommend_ot.definition,
-        recommend_ot.handler,
-    ),
-    find_shift_coverage.definition["name"]: (
-        find_shift_coverage.definition,
-        find_shift_coverage.handler,
-    ),
-    recommend_skill_rebalance.definition["name"]: (
-        recommend_skill_rebalance.definition,
-        recommend_skill_rebalance.handler,
-    ),
-    get_occupancy.definition["name"]: (
-        get_occupancy.definition,
-        get_occupancy.handler,
-    ),
+    m.definition["name"]: (m.definition, m.handler) for m in _MODULES
 }
 
 

@@ -18,6 +18,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.realtime_clock import sim_today
+
 definition: dict[str, Any] = {
     "name": "find_shift_coverage",
     "description": (
@@ -198,7 +200,7 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     rows = db.execute(text(sql), params).mappings().all()
 
     table_rows: list[list[Any]] = []
-    today = datetime.now(timezone.utc).date()
+    today = sim_today(db)
     for i, r in enumerate(rows, start=1):
         tenure = (
             round((today - r["hire_date"]).days / 365.25, 1)

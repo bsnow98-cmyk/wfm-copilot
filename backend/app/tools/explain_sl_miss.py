@@ -63,7 +63,7 @@ _ABANDON_RATE = 0.05
 
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     queue: str = args["queue"]
-    target_date = _parse_date(args.get("date"))
+    target_date = _parse_date(db, args.get("date"))
     sl_target: float = float(args.get("sl_target", 0.8))
 
     day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
@@ -243,7 +243,8 @@ def _diagnose(
     return "unexplained"
 
 
-def _parse_date(value: str | None) -> date:
+def _parse_date(db: Session, value: str | None) -> date:
     if value is None:
-        return (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        from app.services.realtime_clock import sim_today
+        return sim_today(db) - timedelta(days=1)
     return date.fromisoformat(value)

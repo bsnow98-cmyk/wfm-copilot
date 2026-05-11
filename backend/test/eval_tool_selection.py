@@ -59,6 +59,87 @@ CASES: list[dict[str, Any]] = [
         "prompt": "Why does sales need that many agents? Show me the substitution math.",
         "expected_tool": "explain_substitution",
     },
+    # ---- Wave 3 — adherence ----
+    {
+        "prompt": "How is adherence trending this week?",
+        "expected_tool": "get_adherence",
+    },
+    {
+        "prompt": "Who was late today?",
+        "expected_tool": "get_exceptions",
+    },
+    {
+        "prompt": "Why was adherence low yesterday?",
+        "expected_tool": "explain_adherence_drop",
+    },
+    {
+        "prompt": "Are people working their scheduled hours this week?",
+        "expected_tool": "get_conformance",
+    },
+    # ---- Wave 3 — real-time ----
+    {
+        "prompt": "How are we doing right now?",
+        "expected_tool": "get_realtime_status",
+    },
+    {
+        "prompt": "Who's on break right now?",
+        "expected_tool": "get_agents_on_aux",
+    },
+    {
+        "prompt": "Anything firing right now? Any alerts?",
+        "expected_tool": "get_realtime_alerts",
+    },
+    {
+        "prompt": "We're short staffed — can we move some breaks earlier by 30 minutes?",
+        "expected_tool": "recommend_break_shift",
+    },
+    # ---- Wave 3 — PTO/leave ----
+    {
+        "prompt": "How much PTO does EMP001 have left?",
+        "expected_tool": "get_pto_balance",
+    },
+    {
+        "prompt": "What PTO requests are pending approval?",
+        "expected_tool": "get_leave_requests",
+    },
+    {
+        "prompt": "Work my PTO approval queue — which ones should I approve?",
+        "expected_tool": "recommend_leave_approval",
+    },
+    # ---- Wave 4 — performance ----
+    {
+        "prompt": "Tell me about EMP001.",
+        "expected_tool": "get_agent_performance",
+    },
+    {
+        "prompt": "Show me the top 10 agents by QA score.",
+        "expected_tool": "rank_agents",
+    },
+    {
+        "prompt": "How is the team doing this week?",
+        "expected_tool": "get_team_kpis",
+    },
+    {
+        "prompt": "Who's at risk of leaving?",
+        "expected_tool": "get_attrition_risk",
+    },
+    {
+        "prompt": "How is the new hire class doing?",
+        "expected_tool": "get_new_hire_progress",
+    },
+    # ---- Wave 4 — training ----
+    {
+        "prompt": "What training is on the calendar for the next two weeks?",
+        "expected_tool": "get_training_calendar",
+    },
+    {
+        "prompt": "When can I coach EMP001 in the next week?",
+        "expected_tool": "recommend_coaching_slot",
+    },
+    {
+        "prompt": "Who is certified on billing?",
+        "expected_tool": "get_skill_certifications",
+    },
 ]
 
 

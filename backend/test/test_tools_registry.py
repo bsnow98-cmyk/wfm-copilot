@@ -32,6 +32,33 @@ EXPECTED_TOOLS = {
     "find_shift_coverage",
     "recommend_skill_rebalance",
     "get_occupancy",
+    # Wave 3 — strict adherence
+    "get_adherence",
+    "get_exceptions",
+    "explain_adherence_drop",
+    "get_conformance",
+    # Wave 3 — real-time
+    "get_realtime_status",
+    "get_agents_on_aux",
+    "get_realtime_alerts",
+    "recommend_break_shift",
+    # Wave 3 — PTO/leave
+    "get_pto_balance",
+    "get_leave_requests",
+    "check_leave_feasibility",
+    "recommend_leave_approval",
+    # Wave 4 — performance
+    "get_agent_performance",
+    "rank_agents",
+    "get_team_kpis",
+    "get_attrition_risk",
+    "get_new_hire_progress",
+    # Wave 4 — training
+    "get_training_calendar",
+    "check_training_impact",
+    "recommend_coaching_slot",
+    "get_skill_certifications",
+    "get_class_progress",
 }
 
 VALID_RENDERS = {

@@ -17,6 +17,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.realtime_clock import sim_today
+
 definition: dict[str, Any] = {
     "name": "recommend_ot",
     "description": (
@@ -60,7 +62,7 @@ _COLUMNS = [
 
 
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    target_date = _parse_date(args.get("date"))
+    target_date = _parse_date(db, args.get("date"))
     explicit_limit = args.get("limit")
     policy: str = args.get("policy") or "seniority_desc"
 
@@ -172,7 +174,7 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     )
 
     table_rows: list[list[Any]] = []
-    today = datetime.now(timezone.utc).date()
+    today = sim_today(db)
     for i, r in enumerate(rows, start=1):
         tenure = (
             round((today - r["hire_date"]).days / 365.25, 1)
@@ -235,7 +237,8 @@ def _worst_short_window(
     return best
 
 
-def _parse_date(value: str | None) -> date:
+def _parse_date(db: Session, value: str | None) -> date:
     if value is None:
-        return datetime.now(timezone.utc).date()
+        from app.services.realtime_clock import sim_today
+        return sim_today(db)
     return date.fromisoformat(value)

@@ -72,15 +72,28 @@ def _ensure_skill(db, name: str) -> int:
 
 
 def _ensure_agent(db, *, employee_id: str, full_name: str) -> int:
-    """Returns agent.id, creating the row if needed."""
+    """Returns agent.id, creating the row if needed.
+
+    hire_date is set deterministically from employee_id (so re-seeding lands
+    the same dates), spread between ~5 years and ~30 days before sim_now().
+    Required for Wave 4 tenure/attrition tools to have signal."""
+    # Deterministic-but-spread hire_date: hash the employee_id and project
+    # into [30, 1830] days before sim_now().
+    days_back = 30 + (abs(hash(employee_id)) % 1800)
     res = db.execute(
         text(
             """
             INSERT INTO agents
-                (employee_id, full_name, email, contracted_hours_per_week,
-                 timezone, active)
-            VALUES (:emp_id, :name, :email, 40, 'America/New_York', TRUE)
-            ON CONFLICT (employee_id) DO NOTHING
+                (employee_id, full_name, email, hire_date,
+                 contracted_hours_per_week, timezone, active)
+            VALUES (:emp_id, :name, :email,
+                    (COALESCE(
+                        (SELECT sim_now()::date FROM sim_anchor LIMIT 1),
+                        CURRENT_DATE
+                    ) - (:days_back || ' days')::interval)::date,
+                    40, 'America/New_York', TRUE)
+            ON CONFLICT (employee_id) DO UPDATE
+                SET hire_date = COALESCE(agents.hire_date, EXCLUDED.hire_date)
             RETURNING id
             """
         ),
@@ -88,6 +101,7 @@ def _ensure_agent(db, *, employee_id: str, full_name: str) -> int:
             "emp_id": employee_id,
             "name": full_name,
             "email": f"{employee_id.lower()}@example.com",
+            "days_back": days_back,
         },
     )
     row = res.fetchone()

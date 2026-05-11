@@ -53,7 +53,7 @@ _SEVERITY_ORDER = {"high": 3, "medium": 2, "low": 1}
 
 
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    target_date = _parse_date(args.get("date"))
+    target_date = _parse_date(db, args.get("date"))
     queue: str | None = args.get("queue")
     limit: int = int(args.get("limit", 10))
 
@@ -247,7 +247,8 @@ def _forecast_peak_risks(
     return out[:3]
 
 
-def _parse_date(value: str | None) -> date:
+def _parse_date(db: Session, value: str | None) -> date:
     if value is None:
-        return (datetime.now(timezone.utc) + timedelta(days=1)).date()
+        from app.services.realtime_clock import sim_today
+        return sim_today(db) + timedelta(days=1)
     return date.fromisoformat(value)

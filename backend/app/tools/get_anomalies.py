@@ -91,7 +91,8 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     }
 
 
-def _parse_date(value: str | None) -> date:
+def _parse_date(db: Session, value: str | None) -> date:
     if value is None:
-        return (datetime.now(timezone.utc) - timedelta(days=7)).date()
+        from app.services.realtime_clock import sim_today
+        return sim_today(db) - timedelta(days=7)
     return date.fromisoformat(value)

@@ -38,7 +38,7 @@ definition: dict[str, Any] = {
 
 
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    target_date = _parse_date(args.get("date"))
+    target_date = _parse_date(db, args.get("date"))
 
     schedule_id = db.execute(
         text(
