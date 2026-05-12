@@ -97,13 +97,15 @@ def insert_schedule_and_shifts(db: Session, monday: datetime) -> int:
         },
     ).scalar_one()
 
-    # 5 segments per agent per weekday.
+    # 5 segments per agent per weekday. Hours are UTC: 13:00-21:00 UTC
+    # corresponds to 9am-5pm US Eastern (assuming summer DST). sim_anchor
+    # is set to Wed 14:00 UTC = 10am ET, mid-morning shift.
     segments = [
-        ("work", timedelta(hours=9), timedelta(hours=12)),
-        ("lunch", timedelta(hours=12), timedelta(hours=12, minutes=30)),
-        ("work", timedelta(hours=12, minutes=30), timedelta(hours=15)),
-        ("break", timedelta(hours=15), timedelta(hours=15, minutes=15)),
-        ("work", timedelta(hours=15, minutes=15), timedelta(hours=17)),
+        ("work", timedelta(hours=13), timedelta(hours=16)),
+        ("lunch", timedelta(hours=16), timedelta(hours=16, minutes=30)),
+        ("work", timedelta(hours=16, minutes=30), timedelta(hours=19)),
+        ("break", timedelta(hours=19), timedelta(hours=19, minutes=15)),
+        ("work", timedelta(hours=19, minutes=15), timedelta(hours=21)),
     ]
     agents = (
         db.execute(text("SELECT id FROM agents WHERE active = TRUE ORDER BY id"))
@@ -195,12 +197,13 @@ def insert_forecast_and_staffing(
         {"st": staffing_id, "sched": schedule_id},
     )
 
-    # 16 intervals per day (9:00-17:00 in 30-min steps), 5 weekdays = 80.
+    # 16 intervals per day (13:00-21:00 UTC = 9am-5pm ET, 30-min steps),
+    # 5 weekdays = 80.
     intervals: list[datetime] = []
     for day_offset in range(5):
         day_base = monday + timedelta(days=day_offset)
         for half_hour in range(16):
-            intervals.append(day_base + timedelta(hours=9, minutes=30 * half_hour))
+            intervals.append(day_base + timedelta(hours=13, minutes=30 * half_hour))
 
     # staffing_requirement_intervals: req=10, raw=10
     db.execute(
@@ -296,7 +299,13 @@ def main() -> int:
     wed = (real_now - timedelta(days=days_since_wed)).replace(
         hour=14, minute=0, second=0, microsecond=0
     )
-    monday = wed - timedelta(days=2)
+    # IMPORTANT: monday must be at 00:00 UTC. If we just do `wed - 2 days`,
+    # monday inherits wed's 14:00, and then `day_base + timedelta(hours=N)`
+    # below puts shifts at hours 23:00-21:00+1d instead of 09:00-17:00 same
+    # day. Normalize to midnight UTC.
+    monday = (wed - timedelta(days=2)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     print(f"Skeleton week: {monday.date()} (Mon) → {(monday + timedelta(days=4)).date()} (Fri)")
     print(f"sim_now will tick from: {wed.isoformat()}")
     reset_sim_anchor(db, anchor_sim_ts=wed)
