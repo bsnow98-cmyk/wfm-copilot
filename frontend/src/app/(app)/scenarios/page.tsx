@@ -1,45 +1,116 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ToolResponseRenderer } from "@/chat/renderers";
 import { useSkill } from "@/context/SkillContext";
 import { ALL_SKILLS, SKILL_LABEL, type SkillKey } from "@/lib/skills";
 import { ViewHeader } from "@/components/ViewHeader";
 import type { ToolResponse } from "@/chat/types";
+import {
+  fetchLatestStaffing,
+  type StaffingDashboardData,
+} from "@/lib/dashboardData";
 
-const required = (mult: number) =>
+// Mathematical fallback for the chart shape when API is unavailable.
+const syntheticRequired = (mult: number) =>
   Array.from({ length: 24 }, (_, i) =>
     Math.round((6 + Math.sin(i / 3) * 3 + 3) * mult),
   );
 
-// Same per-skill share weights as forecast/schedule pages.
 const SKILL_WEIGHT: Record<SkillKey, number> = {
   sales: 0.30,
   support: 0.55,
   billing: 0.15,
 };
 
-function buildScenarios(filter: SkillKey | typeof ALL_SKILLS):
-  Extract<ToolResponse, { render: "scenarios" }> {
+function fallbackScenarios(filter: SkillKey | typeof ALL_SKILLS): Extract<
+  ToolResponse,
+  { render: "scenarios" }
+> {
   const skillMult = filter === ALL_SKILLS ? 1.0 : SKILL_WEIGHT[filter];
   return {
     render: "scenarios",
     scenarios: [
       {
         name: "Baseline (80/20)",
-        required_by_interval: required(1.0 * skillMult),
+        required_by_interval: syntheticRequired(1.0 * skillMult),
         sla: 0.8,
         asa_seconds: 20,
       },
       {
         name: "Tight (90/15)",
-        required_by_interval: required(1.18 * skillMult),
+        required_by_interval: syntheticRequired(1.18 * skillMult),
         sla: 0.9,
         asa_seconds: 15,
       },
       {
         name: "Loose (70/30)",
-        required_by_interval: required(0.86 * skillMult),
+        required_by_interval: syntheticRequired(0.86 * skillMult),
+        sla: 0.7,
+        asa_seconds: 30,
+      },
+    ],
+  };
+}
+
+// Resample to ~24 buckets so the renderer's bar count matches across scenarios.
+function resample(values: number[], target = 24): number[] {
+  if (values.length === 0) return Array(target).fill(0);
+  if (values.length === target) return values;
+  // Bucket sums then average — preserves shape better than nearest-neighbor.
+  const out: number[] = [];
+  for (let i = 0; i < target; i++) {
+    const lo = Math.floor((i * values.length) / target);
+    const hi = Math.max(lo + 1, Math.floor(((i + 1) * values.length) / target));
+    const slice = values.slice(lo, hi);
+    const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
+    out.push(Math.round(avg));
+  }
+  return out;
+}
+
+function liveScenarios(
+  live: StaffingDashboardData,
+  filter: SkillKey | typeof ALL_SKILLS,
+): Extract<ToolResponse, { render: "scenarios" }> {
+  // Use the most recent UTC day from the staffing intervals so we don't
+  // average across days. Scenarios are visualized at a single-day scale.
+  const days = new Map<string, number[]>();
+  for (const iv of live.intervals) {
+    const d = iv.interval_start.slice(0, 10);
+    if (!days.has(d)) days.set(d, []);
+    days.get(d)!.push(iv.required_agents);
+  }
+  const sortedDays = Array.from(days.keys()).sort();
+  const lastDay = sortedDays[sortedDays.length - 1];
+  const baselineRaw = days.get(lastDay) ?? [];
+  const baseline = resample(baselineRaw);
+
+  const skillMult = filter === ALL_SKILLS ? 1.0 : SKILL_WEIGHT[filter];
+  const scale = (mult: number) =>
+    baseline.map((v) => Math.max(0, Math.round(v * mult * skillMult)));
+
+  const slPct = Math.round(live.serviceLevelTarget * 100);
+  const baselineName = `Baseline (${slPct}/${live.targetAnswerSeconds})`;
+
+  return {
+    render: "scenarios",
+    scenarios: [
+      {
+        name: baselineName,
+        required_by_interval: scale(1.0),
+        sla: live.serviceLevelTarget,
+        asa_seconds: live.targetAnswerSeconds,
+      },
+      {
+        name: "Tight (90/15)",
+        required_by_interval: scale(1.18),
+        sla: 0.9,
+        asa_seconds: 15,
+      },
+      {
+        name: "Loose (70/30)",
+        required_by_interval: scale(0.86),
         sla: 0.7,
         asa_seconds: 30,
       },
@@ -49,9 +120,25 @@ function buildScenarios(filter: SkillKey | typeof ALL_SKILLS):
 
 export default function ScenariosPage() {
   const { skill } = useSkill();
-  const response = useMemo(() => buildScenarios(skill), [skill]);
-  const subtitle =
-    skill === ALL_SKILLS
+  const [live, setLive] = useState<StaffingDashboardData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLatestStaffing().then((d) => {
+      if (!cancelled) setLive(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const response = useMemo(
+    () => (live ? liveScenarios(live, skill) : fallbackScenarios(skill)),
+    [live, skill],
+  );
+  const subtitle = live
+    ? `Baseline pulled from staffing run #${live.staffingId}; tight/loose derived from it.`
+    : skill === ALL_SKILLS
       ? "Side-by-side staffing under different SL / ASA / shrinkage."
       : `Scenarios scoped to ${SKILL_LABEL[skill]} demand only.`;
 

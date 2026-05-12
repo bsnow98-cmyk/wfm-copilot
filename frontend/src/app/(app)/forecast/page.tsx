@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ToolResponseRenderer } from "@/chat/renderers";
 import { useSkill } from "@/context/SkillContext";
 import { ALL_SKILLS, SKILLS, SKILL_LABEL, type SkillKey } from "@/lib/skills";
 import { ViewHeader } from "@/components/ViewHeader";
 import type { ToolResponse } from "@/chat/types";
+import { fetchLatestForecast, type ForecastDashboardData } from "@/lib/dashboardData";
 
 const SKILL_WEIGHT: Record<SkillKey, number> = {
   sales: 0.30,
@@ -211,22 +212,77 @@ function GranularityToggle({
   );
 }
 
+// Bucket live half-hour forecast intervals into the active granularity. Falls
+// back to the synthetic generator when API_BASE is unset or returns no data —
+// the visual stays consistent and the page never breaks on a backend blink.
+function buildLiveResponse(
+  live: ForecastDashboardData,
+  g: Granularity,
+  skill: SkillKey | typeof ALL_SKILLS,
+): Extract<ToolResponse, { render: "chart.line" }> {
+  const w = skill === ALL_SKILLS ? 1 : SKILL_WEIGHT[skill];
+  const buckets = new Map<string, number>();
+  for (const iv of live.intervals) {
+    const d = new Date(iv.interval_start);
+    let key: string;
+    if (g === "monthly") {
+      key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    } else if (g === "weekly") {
+      const dow = (d.getUTCDay() + 6) % 7; // Mon=0
+      const wkStart = new Date(d);
+      wkStart.setUTCDate(d.getUTCDate() - dow);
+      key = wkStart.toISOString().slice(0, 10);
+    } else if (g === "daily") {
+      key = d.toISOString().slice(0, 10);
+    } else {
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      key = `${d.toISOString().slice(0, 10)}T${h}:00`;
+    }
+    buckets.set(key, (buckets.get(key) ?? 0) + iv.forecast_offered);
+  }
+  const points = Array.from(buckets.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([x, y]) => ({ x, y: Math.round(y * w) }));
+  const skillLabel =
+    skill === ALL_SKILLS ? `queue ${live.queue}` : SKILL_LABEL[skill];
+  return {
+    render: "chart.line",
+    title: `Forecast — ${skillLabel}, ${RANGE_LABEL[g]}`,
+    yLabel: "calls",
+    series: [{ name: "Forecast", points }],
+  };
+}
+
 export default function ForecastPage() {
   const { skill } = useSkill();
   const [granularity, setGranularity] = useState<Granularity>("daily");
+  const [live, setLive] = useState<ForecastDashboardData | null>(null);
 
-  const response = useMemo(
-    () =>
-      skill === ALL_SKILLS
-        ? multiCurveResponse(granularity)
-        : singleSkillResponse(skill, granularity),
-    [skill, granularity],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    fetchLatestForecast().then((d) => {
+      if (!cancelled) setLive(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const response = useMemo(() => {
+    if (live) return buildLiveResponse(live, granularity, skill);
+    return skill === ALL_SKILLS
+      ? multiCurveResponse(granularity)
+      : singleSkillResponse(skill, granularity);
+  }, [skill, granularity, live]);
   const dowChart = useMemo(() => dayOfWeekResponse(skill), [skill]);
 
   const skillSubtitle =
     skill === ALL_SKILLS ? "" : `Filtered to ${SKILL_LABEL[skill]} — `;
-  const subtitle = `${skillSubtitle}MSTL daily + weekly + yearly seasonality`;
+  const liveSubtitle = live ? "live forecast" : "MSTL daily + weekly + yearly seasonality";
+  const subtitle = `${skillSubtitle}${liveSubtitle}`;
+
+  const mapeText = live?.mape != null ? `${(live.mape * 100).toFixed(1)}%` : "8.4%";
+  const wapeText = live?.wape != null ? `${(live.wape * 100).toFixed(1)}%` : "6.7%";
 
   return (
     <>
@@ -238,10 +294,10 @@ export default function ForecastPage() {
             <GranularityToggle value={granularity} onChange={setGranularity} />
             <div className="text-sm text-text-secondary">
               <span>MAPE </span>
-              <span data-mono className="text-text-primary">8.4%</span>
+              <span data-mono className="text-text-primary">{mapeText}</span>
               <span className="mx-2 text-text-muted">·</span>
               <span>WAPE </span>
-              <span data-mono className="text-text-primary">6.7%</span>
+              <span data-mono className="text-text-primary">{wapeText}</span>
             </div>
           </div>
         }

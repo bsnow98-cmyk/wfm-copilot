@@ -19,6 +19,7 @@ from app.routers import (
     forecasts,
     health,
     ingest,
+    intraday,
     notifications,
     schedule_changes,
     schedules,
@@ -71,6 +72,7 @@ app.include_router(schedule_changes.router)
 app.include_router(skills.router)
 app.include_router(anomalies.router)
 app.include_router(chat.router)
+app.include_router(intraday.router)
 app.include_router(notifications.router)
 
 
