@@ -244,7 +244,8 @@ class ForecastService:
                 FROM interval_history
                 WHERE queue=:queue
                   AND channel=:channel
-                  AND (:skill_id IS NULL OR skill_id = :skill_id)
+                  AND (CAST(:skill_id AS BIGINT) IS NULL
+                       OR skill_id = CAST(:skill_id AS BIGINT))
                 ORDER BY interval_start
             """),
             {"queue": queue, "channel": channel, "skill_id": skill_id},

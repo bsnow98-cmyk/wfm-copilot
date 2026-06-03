@@ -306,7 +306,7 @@ def _seed_db(df: pd.DataFrame) -> int:
             :queue, :channel, :interval_start, :interval_minutes,
             :offered, :handled, :abandoned, :aht_seconds, :asa_seconds, :service_level
         )
-        ON CONFLICT (queue, channel, interval_start) DO UPDATE SET
+        ON CONFLICT (queue, channel, interval_start, skill_id) DO UPDATE SET
             offered = EXCLUDED.offered,
             handled = EXCLUDED.handled,
             abandoned = EXCLUDED.abandoned,
@@ -328,12 +328,11 @@ def _seed_db(df: pd.DataFrame) -> int:
 def _seed_db_per_skill(df: pd.DataFrame) -> int:
     """Phase 8 — write per-(queue, skill, interval) rows.
 
-    Resolves skill names to skill_ids inside the same session. UNIQUE
-    constraint on interval_history is (queue, channel, interval_start),
-    which doesn't include skill_id, so we can't have both per-skill rows
-    AND aggregate rows in the same DB without dropping that constraint.
-    For Phase 8 stage 1 we accept per-skill-only mode (the aggregate roll-up
-    can be computed at query time with SUM by interval).
+    Resolves skill names to skill_ids inside the same session. Migration 0017
+    rewrote the interval_history unique constraint to
+    (queue, channel, interval_start, skill_id) NULLS NOT DISTINCT, so per-skill
+    rows coexist with each other and with aggregate (skill_id NULL) rows. We
+    upsert on that 4-column target so re-runs are idempotent.
     """
     from app.db import SessionLocal
 
@@ -361,23 +360,9 @@ def _seed_db_per_skill(df: pd.DataFrame) -> int:
         for r in rows:
             r["skill_id"] = skill_id_by_name[str(r["skill"])]
 
-        # The unique constraint is (queue, channel, interval_start), so we
-        # can't have multiple per-skill rows. The Phase 8 schema migration
-        # will need to update this constraint to include skill_id before
-        # this seed mode is usable end-to-end. For now, fail loud if an
-        # operator tries to mix modes.
-        # TODO Phase 8 stage 2: add (queue, channel, interval_start, skill_id)
-        # unique constraint with NULLS NOT DISTINCT, then re-enable upsert.
-        # Until then, this seeder requires an empty interval_history table.
-        existing = db.execute(text("SELECT COUNT(*) FROM interval_history")).scalar_one()
-        if int(existing) > 0:
-            raise RuntimeError(
-                "interval_history is not empty — per-skill seeding requires the "
-                "Phase 8 stage 2 unique-constraint update before it can coexist "
-                "with aggregate rows. Truncate the table first or seed per-skill "
-                "into a fresh DB."
-            )
-
+        # Migration 0017 made (queue, channel, interval_start, skill_id) the
+        # unique key (NULLS NOT DISTINCT), so per-skill rows coexist. Upsert on
+        # that target keeps re-seeding idempotent.
         chunk = 5000
         for i in range(0, len(rows), chunk):
             db.execute(
@@ -390,6 +375,13 @@ def _seed_db_per_skill(df: pd.DataFrame) -> int:
                         :queue, :channel, :skill_id, :interval_start, :interval_minutes,
                         :offered, :handled, :abandoned, :aht_seconds, :asa_seconds, :service_level
                     )
+                    ON CONFLICT (queue, channel, interval_start, skill_id) DO UPDATE SET
+                        offered = EXCLUDED.offered,
+                        handled = EXCLUDED.handled,
+                        abandoned = EXCLUDED.abandoned,
+                        aht_seconds = EXCLUDED.aht_seconds,
+                        asa_seconds = EXCLUDED.asa_seconds,
+                        service_level = EXCLUDED.service_level
                     """
                 ),
                 rows[i : i + chunk],
