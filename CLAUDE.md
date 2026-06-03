@@ -38,9 +38,6 @@ In QA mode, flag any code that doesn't match DESIGN.md.
 - Conversation persistence: Postgres `chat_conversations` + `chat_messages`. Frontend stores only `conversation_id` in localStorage.
 - Streaming TTFB target: ≤ 800ms p50.
 - Anomaly score is detector-specific range (NOT 0-1). Use `score: number` + `detector: enum`, never `confidence`.
-- **Schedule writes are aggregate in `schedule_coverage`, per-skill in `shift_segments`.** The 40 dashboard tools join `schedule_coverage` and `staffing_requirement_intervals` on `interval_start` *without* a `skill_id` predicate, so per-skill rows in those tables would fan the joins out. Persist coverage and staffing **aggregate only** (`skill_id IS NULL`); carry per-skill richness in `shift_segments.skill_id` + per-skill `forecast_runs`. The multi-skill solver's per-skill `required[d,slot,k]` is computed in-memory by `app/services/multi_skill_demand.py` and never persisted as staffing rows.
-- **Multi-skill schedule persistence:** `solve_multi_skill` is pure math; the persistence wrapper is `app/services/scheduling_multi_skill_persist.py`. It writes work/lunch/work/break/work segments (the **break explosion**) — Wave 3+4's adherence generator pattern-matches `segment_type='break'`/`'lunch'`, so a single-`work` schedule would silently drop those exception types.
-- **Per-skill `interval_history` requires migration 0017** (`(queue, channel, interval_start, skill_id) NULLS NOT DISTINCT`). Migration 0012 added the column but left the 3-col unique constraint; 0017 closes that. Any `ON CONFLICT` on `interval_history` must target the 4-col form.
 
 ## Open critical gaps (must close before Phase 6 GA)
 
@@ -119,8 +116,6 @@ Verifies: env vars, DB reach, all 11 tables present, tool registry boots with 8 
 6. **statsforecast/numba MSTL OOMs the 512MB starter web tier**. Two options: bump to `standard` ($25/mo) for real forecast runs, or synthesize forecast data directly via SQL (`scripts/preflight.py`-adjacent pattern: copy `interval_history` forward 7 days into `forecast_intervals`).
 7. **CP-SAT scheduling solver also won't run on 512MB.** Same workaround applies — synthesize a schedule for the demo, or bump tier.
 8. **Anomaly detection needs `forecast_intervals` aligned to historical dates** (not just future). The `JOIN` requires matching `interval_start` between `forecast_intervals` and `interval_history`. To get non-zero anomalies, backfill `forecast_intervals` for past weeks with values close-but-not-equal to actuals.
-9. **psycopg3 can't infer the type of a bound `NULL` parameter.** Any pattern like `WHERE (:x IS NULL OR col = :x)` blows up with `AmbiguousParameter: could not determine data type of parameter $3` when `:x` is None. Wrap the binding: `WHERE (CAST(:x AS BIGINT) IS NULL OR col = CAST(:x AS BIGINT))`. This is gotcha #2 (`CAST(:name AS type)`) in disguise — it also covers bound NULLs, not just `::type` casts. First hit in `forecasting.py:_load_history` on 2026-05-28; fixed there. Watch new query patterns for the same shape.
-10. **CP-SAT + MSTL CAN run for prod data — just not on the Render dyno.** The seeders (`seed_prod_skeleton.py`, `seed_prod_real.py`) connect to the target Postgres via `DATABASE_URL` and run the heavy math **in the local process** — no need to upgrade the Render web tier. Pattern: `DATABASE_URL=… python -m scripts.seed_prod_real`. CP-SAT and MSTL OOM only on the 512MB *dyno*, not on a laptop.
 
 ### Demo data state (current production)
 
