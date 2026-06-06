@@ -44,34 +44,44 @@ INTERVAL_MIN = 30
 INTERVALS_PER_DAY = 24 * 60 // INTERVAL_MIN  # 48
 
 # Break/lunch layout inside an 8h (480 min) shift, as minute offsets from the
-# shift start. Mirrors the skeleton seeder's proportions (work / lunch30 /
-# work / break15 / work) but anchored to each agent's solved start time.
-#   work  : 0   .. 180   (3h)
-#   lunch : 180 .. 210   (30m)
-#   work  : 210 .. 360   (2.5h)
-#   break : 360 .. 375   (15m)
-#   work  : 375 .. 480   (1h45m)
-_LUNCH_OFFSET = 180
+# shift start, anchored to each agent's solved start time. Two paid 15-min
+# breaks bracketing an unpaid 30-min lunch — the standard 8h contact-center
+# rest pattern (mid-morning break, midday lunch, mid-afternoon break):
+#   work   : 0   .. 120   (2h)
+#   break1 : 120 .. 135   (15m)
+#   work   : 135 .. 255   (2h)
+#   lunch  : 255 .. 285   (30m)
+#   work   : 285 .. 405   (2h)
+#   break2 : 405 .. 420   (15m)
+#   work   : 420 .. 480   (1h)
+# => 7h work + 2x15m break + 30m lunch = 480 min.
+_BREAK1_OFFSET = 120
+_BREAK1_LEN = 15
+_LUNCH_OFFSET = 255
 _LUNCH_LEN = 30
-_BREAK_OFFSET = 360
-_BREAK_LEN = 15
+_BREAK2_OFFSET = 405
+_BREAK2_LEN = 15
 
 
 def _segments_for_shift(start_min: int) -> list[tuple[str, int, int]]:
     """(segment_type, start_offset_min, end_offset_min) for one 8h shift,
     offsets measured from day-midnight (start_min is the shift start)."""
     s = start_min
+    break1_s = s + _BREAK1_OFFSET
+    break1_e = break1_s + _BREAK1_LEN
     lunch_s = s + _LUNCH_OFFSET
     lunch_e = lunch_s + _LUNCH_LEN
-    break_s = s + _BREAK_OFFSET
-    break_e = break_s + _BREAK_LEN
+    break2_s = s + _BREAK2_OFFSET
+    break2_e = break2_s + _BREAK2_LEN
     shift_e = s + SHIFT_LENGTH_MIN
     return [
-        ("work", s, lunch_s),
+        ("work", s, break1_s),
+        ("break", break1_s, break1_e),
+        ("work", break1_e, lunch_s),
         ("lunch", lunch_s, lunch_e),
-        ("work", lunch_e, break_s),
-        ("break", break_s, break_e),
-        ("work", break_e, shift_e),
+        ("work", lunch_e, break2_s),
+        ("break", break2_s, break2_e),
+        ("work", break2_e, shift_e),
     ]
 
 
