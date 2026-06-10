@@ -61,6 +61,39 @@ def get_anchor(db: Session) -> SimAnchor:
     )
 
 
+def ensure_sim_anchor_in_window(db: Session) -> bool:
+    """Re-anchor the sim clock if it has drifted outside the seeded data.
+
+    The clock advances with real time, but the synthetic shift_segments
+    cover a fixed window — after ~a week of real time, sim-now walks past
+    the data and the live ticker / Wave 3+4 tools read into the void.
+    Called on every API startup (cheap: two SELECTs, usually a no-op).
+
+    Re-anchors to the mid-window date at sim-now's current time-of-day so
+    the intraday position stays natural. Returns True if it re-anchored.
+    """
+    window = db.execute(
+        text("SELECT MIN(start_time) AS lo, MAX(start_time) AS hi FROM shift_segments")
+    ).mappings().one()
+    lo, hi = window["lo"], window["hi"]
+    if lo is None or hi is None:
+        return False  # nothing seeded yet — nothing to anchor to
+
+    now = sim_now(db)
+    if lo <= now <= hi:
+        return False
+
+    mid_date = (lo + (hi - lo) / 2).date()
+    target = datetime.combine(mid_date, now.timetz())
+    reset_anchor(
+        db,
+        anchor_sim_ts=target,
+        notes=f"Auto re-anchored at startup: sim-now {now.isoformat()} had "
+              f"drifted outside the seeded window {lo.date()}..{hi.date()}",
+    )
+    return True
+
+
 def reset_anchor(
     db: Session,
     *,

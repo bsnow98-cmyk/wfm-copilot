@@ -187,3 +187,39 @@ def test_sim_clock_advances(db: Session) -> None:
     assert seg_range["lo"] - timedelta(days=2) <= now <= seg_range["hi"] + timedelta(days=2), (
         f"sim_now {now} is outside the shift window {seg_range['lo']}→{seg_range['hi']}"
     )
+
+
+def test_sim_anchor_self_heals_after_drift(db: Session) -> None:
+    """The startup check must pull a drifted sim clock back into the window.
+
+    Deliberately breaks the anchor (sim-now jumped 30 days past the data),
+    runs the self-heal, and asserts the clock is back inside. The DB ends in
+    the HEALED state, so this is safe against the live local database.
+    """
+    from datetime import timedelta
+
+    from app.services.realtime_clock import (
+        ensure_sim_anchor_in_window,
+        reset_anchor,
+        sim_now,
+    )
+
+    window = db.execute(
+        text("SELECT MIN(start_time) AS lo, MAX(start_time) AS hi FROM shift_segments")
+    ).mappings().one()
+    if window["lo"] is None:
+        pytest.skip("No shift_segments seeded")
+
+    # Break it: anchor sim-now 30 days past the end of the data.
+    reset_anchor(db, anchor_sim_ts=window["hi"] + timedelta(days=30))
+    assert sim_now(db) > window["hi"]
+
+    # Heal it.
+    assert ensure_sim_anchor_in_window(db) is True
+    healed = sim_now(db)
+    assert window["lo"] <= healed <= window["hi"], (
+        f"self-heal left sim_now {healed} outside {window['lo']}→{window['hi']}"
+    )
+
+    # Second call is a no-op.
+    assert ensure_sim_anchor_in_window(db) is False
