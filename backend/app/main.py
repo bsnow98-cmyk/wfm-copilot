@@ -100,3 +100,17 @@ async def on_startup() -> None:
                 log.info("Sim clock re-anchored into the seeded data window.")
     except Exception:
         log.exception("Sim-anchor check failed — API will still start.")
+
+    # Fail-fast for jobs orphaned by a restart: BackgroundTasks die with the
+    # process, and a row stuck at pending/running spins polling clients
+    # forever. Only rows past the staleness threshold are touched.
+    try:
+        from app.db import SessionLocal
+        from app.services.job_sweeper import sweep_orphaned_jobs
+
+        with SessionLocal() as db:
+            counts = sweep_orphaned_jobs(db)
+            if any(counts.values()):
+                log.info("Orphaned-job sweep: %s", counts)
+    except Exception:
+        log.exception("Orphaned-job sweep failed — API will still start.")
