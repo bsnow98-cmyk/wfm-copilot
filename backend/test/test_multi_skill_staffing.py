@@ -220,12 +220,13 @@ def test_secondary_credit_high_proficiency_higher_weight() -> None:
 
 
 # --------------------------------------------------------------------------
-# Tool registry now has 7 tools
+# Tool registry includes the multi-skill tools
 # --------------------------------------------------------------------------
 def test_tool_registry_includes_get_skills_coverage() -> None:
     from app.tools import _REGISTRY
 
+    # Membership, not an exact count — the registry grows every phase and an
+    # exact-count assertion rots immediately (it sat broken at "== 8" while
+    # the registry reached 40).
     assert "get_skills_coverage" in _REGISTRY
-    # 6 Phase 6 + 1 Phase 8 stage 2 (get_skills_coverage)
-    # + 1 Phase 8 stage 3 (explain_substitution) = 8.
-    assert len(_REGISTRY) == 8
+    assert "explain_substitution" in _REGISTRY
