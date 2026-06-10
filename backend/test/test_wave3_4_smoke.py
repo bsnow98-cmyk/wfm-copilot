@@ -223,3 +223,35 @@ def test_sim_anchor_self_heals_after_drift(db: Session) -> None:
 
     # Second call is a no-op.
     assert ensure_sim_anchor_in_window(db) is False
+
+
+def test_read_path_sim_heal_throttles(db: Session) -> None:
+    """maybe_ensure_sim_anchor heals when due and throttles between checks.
+
+    Like the test above, the DB deliberately ends in the HEALED state.
+    """
+    from datetime import timedelta
+
+    from app.services import realtime_clock as rc
+
+    window = db.execute(
+        text("SELECT MIN(start_time) AS lo, MAX(start_time) AS hi FROM shift_segments")
+    ).mappings().one()
+    if window["lo"] is None:
+        pytest.skip("No shift_segments seeded")
+
+    # Break the clock; an un-throttled check must heal it.
+    rc.reset_anchor(db, anchor_sim_ts=window["hi"] + timedelta(days=30))
+    rc._last_window_check_monotonic = float("-inf")
+    assert rc.maybe_ensure_sim_anchor(db, min_interval_s=0) is True
+    assert window["lo"] <= rc.sim_now(db) <= window["hi"]
+
+    # Break it again; a throttled call must NOT touch it...
+    rc.reset_anchor(db, anchor_sim_ts=window["hi"] + timedelta(days=30))
+    assert rc.maybe_ensure_sim_anchor(db, min_interval_s=600) is False
+    assert rc.sim_now(db) > window["hi"]
+
+    # ...and the next due check heals it (leaves the DB healthy).
+    rc._last_window_check_monotonic = float("-inf")
+    assert rc.maybe_ensure_sim_anchor(db, min_interval_s=0) is True
+    assert window["lo"] <= rc.sim_now(db) <= window["hi"]
