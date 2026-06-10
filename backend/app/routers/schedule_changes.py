@@ -84,13 +84,17 @@ def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyRespons
             schedule_id=int(log_row["schedule_id"]),
         )
 
-    # Concurrency check + write.
+    # Concurrency check + write. The token is the integrity boundary (D-5):
+    # the version and change set stored at preview time are authoritative,
+    # NOT the request body — otherwise a client could apply a change set
+    # that was never shown to the user.
+    change_set = token.change_set
     try:
         log_id = apply_change(
             db,
             schedule_id=token.schedule_id,
-            expected_version=req.schedule_version,
-            change_set=[c.model_dump(mode="json") for c in req.changes],
+            expected_version=token.schedule_version,
+            change_set=change_set,
             conversation_id=token.conversation_id,
             user_msg_id=token.user_msg_id,
         )
@@ -98,8 +102,12 @@ def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyRespons
         # D-4: 409 with both versions side-by-side. The fresh preview is
         # rebuilt from the current state so the frontend can show 'Your
         # preview / Current state'.
-        target_date = req.changes[0].start.date() if req.changes else date.today()
-        affected = sorted({c.agent_id for c in req.changes})
+        target_date = (
+            datetime.fromisoformat(change_set[0]["start"]).date()
+            if change_set
+            else date.today()
+        )
+        affected = sorted({c["agent_id"] for c in change_set})
         fresh_state = snapshot_state(db, token.schedule_id, affected, target_date)
         raise HTTPException(
             status_code=409,

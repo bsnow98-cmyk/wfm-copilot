@@ -43,6 +43,8 @@ definition: dict[str, Any] = {
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     metric: str = args["metric"]
     order: str = args.get("order") or "desc"
+    if order not in ("desc", "asc"):  # clamp model input before any SQL use
+        order = "desc"
     limit = int(args.get("limit") or 10)
     window_days = int(args.get("window_days") or 14)
     now = db.execute(text("SELECT sim_now() AS ts")).mappings().one()["ts"]

@@ -1,7 +1,5 @@
 import type { ToolResponse } from "@/chat/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "@/lib/backendProxy";
 
 export type ApplyChange = {
   agent_id: string;
@@ -33,14 +31,8 @@ export class ApplyError extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (DEMO_PASSWORD) headers.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-  return headers;
-}
-
 export async function applySchedule(req: ApplyRequest): Promise<ApplyResponse> {
-  if (!API_BASE) {
+  if (!HAS_BACKEND) {
     // Mock-provider mode: pretend we applied. Useful for local UI work.
     return {
       log_id: "mock-log-id",
@@ -48,9 +40,9 @@ export async function applySchedule(req: ApplyRequest): Promise<ApplyResponse> {
       schedule_id: 0,
     };
   }
-  const res = await fetch(`${API_BASE}/schedules/apply`, {
+  const res = await fetch(`${PROXY_BASE}/schedules/apply`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
   if (res.ok) return (await res.json()) as ApplyResponse;

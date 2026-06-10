@@ -12,8 +12,8 @@ import {
   type SkillKey,
 } from "./skills";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "./backendProxy";
+
 const FETCH_TIMEOUT_MS = 1500;  // small — picker should never block layout
 
 export type Skill = {
@@ -37,20 +37,13 @@ export const FALLBACK_SKILLS: Skill[] = SKILLS.map((key: SkillKey) => ({
   secondary_agent_count: 0,
 }));
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  if (DEMO_PASSWORD) h.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-  return h;
-}
-
 export async function fetchSkills(): Promise<Skill[]> {
-  if (!API_BASE) return FALLBACK_SKILLS;
+  if (!HAS_BACKEND) return FALLBACK_SKILLS;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}/skills`, {
-      headers: authHeaders(),
+    const res = await fetch(`${PROXY_BASE}/skills`, {
       signal: controller.signal,
     });
     if (!res.ok) return FALLBACK_SKILLS;

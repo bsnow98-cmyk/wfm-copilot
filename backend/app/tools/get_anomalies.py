@@ -41,24 +41,26 @@ _COLUMNS = ["id", "date", "queue", "category", "severity", "score"]
 
 
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
-    since = _parse_date(args.get("since_date"))
     queue: str | None = args.get("queue")
 
-    where = "WHERE date >= :since"
-    params: dict[str, Any] = {"since": since}
-    if queue:
-        where += " AND queue = :queue"
-        params["queue"] = queue
-
-    sql = f"""
-        SELECT id, date, queue, category, severity, score
-        FROM anomalies
-        {where}
-        ORDER BY date DESC, severity DESC
-        LIMIT 100
-    """
-
     try:
+        # _parse_date may hit the DB (sim_today) — keep it inside the
+        # table-missing guard along with the main query.
+        since = _parse_date(db, args.get("since_date"))
+
+        where = "WHERE date >= :since"
+        params: dict[str, Any] = {"since": since}
+        if queue:
+            where += " AND queue = :queue"
+            params["queue"] = queue
+
+        sql = f"""
+            SELECT id, date, queue, category, severity, score
+            FROM anomalies
+            {where}
+            ORDER BY date DESC, severity DESC
+            LIMIT 100
+        """
         result = db.execute(text(sql), params).all()
     except ProgrammingError:
         # Table doesn't exist yet (Phase 5 hasn't shipped). Return empty table.

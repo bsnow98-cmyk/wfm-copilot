@@ -10,25 +10,18 @@
  * No throws. Page-level rendering should never break because the API blinked.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "./backendProxy";
+
 const FETCH_TIMEOUT_MS = 4500;
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  if (DEMO_PASSWORD) h.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-  return h;
-}
-
-export const HAS_API: boolean = Boolean(API_BASE);
+export const HAS_API: boolean = HAS_BACKEND;
 
 async function getJSON<T>(path: string): Promise<T | null> {
-  if (!API_BASE) return null;
+  if (!HAS_BACKEND) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      headers: authHeaders(),
+    const res = await fetch(`${PROXY_BASE}${path}`, {
       signal: controller.signal,
     });
     if (!res.ok) return null;

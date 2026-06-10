@@ -86,7 +86,7 @@ async def ingest_intervals(
             :queue, :channel, :interval_start, :interval_minutes,
             :offered, :handled, :abandoned, :aht_seconds, :asa_seconds, :service_level
         )
-        ON CONFLICT (queue, channel, interval_start) DO UPDATE SET
+        ON CONFLICT (queue, channel, interval_start, skill_id) DO UPDATE SET
             offered       = EXCLUDED.offered,
             handled       = EXCLUDED.handled,
             abandoned     = EXCLUDED.abandoned,

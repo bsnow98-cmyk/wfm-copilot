@@ -65,6 +65,10 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     target_date = _parse_date(db, args.get("date"))
     explicit_limit = args.get("limit")
     policy: str = args.get("policy") or "seniority_desc"
+    # Allowlist before SQL interpolation — model input is adversarial input.
+    _policy_dirs = {"seniority_desc": "ASC", "seniority_asc": "DESC"}
+    if policy not in _policy_dirs:
+        policy = "seniority_desc"
 
     schedule_id = db.execute(
         text(
@@ -127,7 +131,7 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
         int(explicit_limit) if explicit_limit else max(1, round(avg_short))
     )
 
-    order = "ASC" if policy == "seniority_desc" else "DESC"
+    order = _policy_dirs[policy]
     # Off-duty = no work segment overlapping the window. Top skill = max
     # proficiency across this agent's skills. Active agents only.
     rows = (

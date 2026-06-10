@@ -56,6 +56,10 @@ _COLUMNS = ["rank", "agent", "employee_id", "tenure_yrs", "shift", "skill"]
 def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     target_date = _parse_date(db, args.get("date"))
     policy: str = args.get("policy") or "seniority_desc"
+    # Allowlist before SQL interpolation — model input is adversarial input.
+    _policy_dirs = {"seniority_desc": "ASC", "seniority_asc": "DESC"}
+    if policy not in _policy_dirs:
+        policy = "seniority_desc"
 
     schedule_id = db.execute(
         text(
@@ -115,7 +119,7 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     win_start, win_end, avg_over = window
     n_to_offer = max(1, round(avg_over))
 
-    order = "ASC" if policy == "seniority_desc" else "DESC"
+    order = _policy_dirs[policy]
     rows = (
         db.execute(
             text(

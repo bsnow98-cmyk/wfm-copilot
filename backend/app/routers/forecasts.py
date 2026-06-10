@@ -227,7 +227,7 @@ def _load_summary(db: Session, run_id: int) -> ForecastRunSummary | None:
         text("""
             SELECT id, queue, channel, model_name, status,
                    horizon_start, horizon_end, mape, wape, error_message,
-                   created_at, started_at, completed_at
+                   created_at, started_at, completed_at, skill_id
             FROM forecast_runs WHERE id = :id
         """),
         {"id": run_id},

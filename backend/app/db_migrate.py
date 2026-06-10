@@ -42,18 +42,22 @@ def run_migrations(engine: Engine) -> list[str]:
         return []
 
     applied: list[str] = []
-    with engine.begin() as conn:
-        for sql_path in sql_files:
-            log.info("Applying migration: %s", sql_path.name)
-            sql = sql_path.read_text(encoding="utf-8")
-            # psycopg3 always parses '%' as a parameter placeholder marker —
-            # even via exec_driver_sql. Migration files use '%' freely in
-            # comments ("0.8000 = 80%"), so escape every '%' to '%%' before
-            # execution. None of our migrations use '%' as the modulo
-            # operator; if a future one does, write it as '%%' in the SQL
-            # source and document the escape.
-            sql = sql.replace("%", "%%")
+    # One transaction PER FILE: a failure in migration N must not roll back
+    # 0001..N-1 (on a fresh database that would leave zero schema while the
+    # API still starts). Idempotent files make the partial-progress case safe
+    # to re-run on next boot.
+    for sql_path in sql_files:
+        log.info("Applying migration: %s", sql_path.name)
+        sql = sql_path.read_text(encoding="utf-8")
+        # psycopg3 always parses '%' as a parameter placeholder marker —
+        # even via exec_driver_sql. Migration files use '%' freely in
+        # comments ("0.8000 = 80%"), so escape every '%' to '%%' before
+        # execution. None of our migrations use '%' as the modulo
+        # operator; if a future one does, write it as '%%' in the SQL
+        # source and document the escape.
+        sql = sql.replace("%", "%%")
+        with engine.begin() as conn:
             conn.exec_driver_sql(sql)
-            applied.append(sql_path.name)
+        applied.append(sql_path.name)
     log.info("Migrations complete (%d files).", len(applied))
     return applied

@@ -1,7 +1,5 @@
 import type { ToolResponse } from "@/chat/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "@/lib/backendProxy";
 
 export type NotificationItem = {
   id: string;
@@ -21,35 +19,25 @@ export type NotificationsResponse = {
   unread_count: number;
 };
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  if (DEMO_PASSWORD) h.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-  return h;
-}
-
 export async function fetchNotifications(): Promise<NotificationsResponse> {
-  if (!API_BASE) {
+  if (!HAS_BACKEND) {
     return { items: [], unread_count: 0 };
   }
-  const res = await fetch(`${API_BASE}/notifications?limit=20`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`${PROXY_BASE}/notifications?limit=20`);
   if (!res.ok) throw new Error(`fetchNotifications ${res.status}`);
   return (await res.json()) as NotificationsResponse;
 }
 
 export async function markRead(id: string): Promise<void> {
-  if (!API_BASE) return;
-  await fetch(`${API_BASE}/notifications/${id}/read`, {
+  if (!HAS_BACKEND) return;
+  await fetch(`${PROXY_BASE}/notifications/${id}/read`, {
     method: "POST",
-    headers: authHeaders(),
   });
 }
 
 export async function markAllRead(): Promise<void> {
-  if (!API_BASE) return;
-  await fetch(`${API_BASE}/notifications/read-all`, {
+  if (!HAS_BACKEND) return;
+  await fetch(`${PROXY_BASE}/notifications/read-all`, {
     method: "POST",
-    headers: authHeaders(),
   });
 }

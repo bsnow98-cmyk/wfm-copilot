@@ -1,10 +1,8 @@
 import type { ChatHandlers, ChatProvider, ChatProviderRequest, ChatProviderResult } from "./provider";
 import type { ToolCall, ToolResponse } from "./types";
+import { PROXY_BASE } from "@/lib/backendProxy";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const CHAT_URL = API_BASE ? `${API_BASE}/chat` : "/api/chat";
-
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+const CHAT_URL = `${PROXY_BASE}/chat`;
 
 type SSEEvent =
   | { type: "token"; text: string }
@@ -21,9 +19,6 @@ export const httpProvider: ChatProvider = {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     };
-    if (DEMO_PASSWORD) {
-      headers.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-    }
 
     const res = await fetch(CHAT_URL, {
       method: "POST",

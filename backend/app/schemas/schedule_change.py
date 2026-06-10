@@ -22,8 +22,10 @@ class ScheduleChange(BaseModel):
 
 class ApplyRequest(BaseModel):
     apply_token: str
-    schedule_version: int
-    changes: list[ScheduleChange]
+    # Deprecated: the server applies the version + change_set stored in the
+    # token at preview time. Accepted for backward compatibility but ignored.
+    schedule_version: int | None = None
+    changes: list[ScheduleChange] = []
 
 
 class ApplyResponse(BaseModel):
