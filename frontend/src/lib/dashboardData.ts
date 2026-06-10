@@ -42,6 +42,7 @@ type ForecastRun = {
   status: string;
   mape: number | null;
   wape: number | null;
+  skill_id: number | null;
 };
 
 type ForecastInterval = {
@@ -124,10 +125,22 @@ export type ForecastDashboardData = {
   intervals: ForecastInterval[];
 };
 
-export async function fetchLatestForecast(): Promise<ForecastDashboardData | null> {
-  const runs = await getJSON<ForecastRun[]>("/forecasts?limit=10");
+export async function fetchLatestForecast(
+  skillId?: number | null,
+): Promise<ForecastDashboardData | null> {
+  // With a skill selected, only consider that skill's runs — otherwise the
+  // chart can show Support data while the picker says Sales.
+  const skillParam = skillId != null ? `&skill_id=${skillId}` : "";
+  const runs = await getJSON<ForecastRun[]>(`/forecasts?limit=10${skillParam}`);
   if (!runs || runs.length === 0) return null;
-  const run = runs.find((r) => r.status === "completed") ?? runs[0];
+  // Unfiltered view: prefer the aggregate run (skill_id null) so "All skills"
+  // doesn't show whichever single skill happened to forecast last.
+  const run =
+    (skillId == null
+      ? runs.find((r) => r.status === "completed" && r.skill_id == null)
+      : undefined) ??
+    runs.find((r) => r.status === "completed") ??
+    runs[0];
   const intervals = await getJSON<ForecastInterval[]>(
     `/forecasts/${run.id}/intervals`,
   );

@@ -219,8 +219,12 @@ function buildLiveResponse(
   live: ForecastDashboardData,
   g: Granularity,
   skill: SkillKey | typeof ALL_SKILLS,
+  skillFiltered: boolean,
 ): Extract<ToolResponse, { render: "chart.line" }> {
-  const w = skill === ALL_SKILLS ? 1 : SKILL_WEIGHT[skill];
+  // SKILL_WEIGHT is the legacy approximation for scaling an AGGREGATE run
+  // down to one skill. When the run was fetched skill-filtered server-side,
+  // the data is already that skill's — no scaling.
+  const w = skill === ALL_SKILLS || skillFiltered ? 1 : SKILL_WEIGHT[skill];
   const buckets = new Map<string, number>();
   for (const iv of live.intervals) {
     const d = new Date(iv.interval_start);
@@ -254,26 +258,39 @@ function buildLiveResponse(
 }
 
 export default function ForecastPage() {
-  const { skill } = useSkill();
+  const { skill, skills, skillsLoading } = useSkill();
   const [granularity, setGranularity] = useState<Granularity>("daily");
   const [live, setLive] = useState<ForecastDashboardData | null>(null);
 
+  // Resolve the selected skill key to its server id (null for ALL_SKILLS or
+  // when running on fallback skills, whose ids are placeholders).
+  const skillId =
+    skill === ALL_SKILLS
+      ? null
+      : skills.find((s) => s.name === skill)?.id ?? null;
+
   useEffect(() => {
+    // Wait for the live skill list so a skill-filtered page doesn't first
+    // fetch unfiltered and flash the wrong skill's data.
+    if (skillsLoading) return;
     let cancelled = false;
-    fetchLatestForecast().then((d) => {
+    // Drop the previous skill's data immediately — a brief synthetic
+    // fallback beats rendering stale data under the new skill's label.
+    setLive(null);
+    fetchLatestForecast(skillId).then((d) => {
       if (!cancelled) setLive(d);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [skillId, skillsLoading]);
 
   const response = useMemo(() => {
-    if (live) return buildLiveResponse(live, granularity, skill);
+    if (live) return buildLiveResponse(live, granularity, skill, skillId != null);
     return skill === ALL_SKILLS
       ? multiCurveResponse(granularity)
       : singleSkillResponse(skill, granularity);
-  }, [skill, granularity, live]);
+  }, [skill, granularity, live, skillId]);
   const dowChart = useMemo(() => dayOfWeekResponse(skill), [skill]);
 
   const skillSubtitle =

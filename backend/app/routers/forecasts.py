@@ -126,6 +126,7 @@ def create_forecast(
 @router.get("", response_model=list[ForecastRunSummary])
 def list_forecasts(
     queue: str | None = None,
+    skill_id: int | None = None,
     limit: int = 20,
     db: Session = Depends(get_db),
 ) -> list[ForecastRunSummary]:
@@ -138,10 +139,15 @@ def list_forecasts(
         ORDER BY created_at DESC
         LIMIT :limit
     """
-    where = "WHERE queue = :queue" if queue else ""
+    clauses: list[str] = []
     params: dict = {"limit": limit}
     if queue:
+        clauses.append("queue = :queue")
         params["queue"] = queue
+    if skill_id is not None:
+        clauses.append("skill_id = :skill_id")
+        params["skill_id"] = skill_id
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
 
     rows = db.execute(text(sql.format(where=where)), params).mappings().all()
     return [ForecastRunSummary(**dict(r)) for r in rows]
