@@ -41,7 +41,10 @@ CASES: list[dict[str, Any]] = [
         "expected_tool": "compare_scenarios",
     },
     {
-        "prompt": "What if Adams takes lunch at 13:00 instead of 12:30 today?",
+        # {agent} resolves to a real seeded agent at runtime — with live tool
+        # results, the model rightly refuses to preview a change for someone
+        # who doesn't exist, so a fictional name can never pass.
+        "prompt": "What if {agent} takes lunch at 13:00 instead of 12:30 today?",
         "expected_tool": "preview_schedule_change",
     },
     # Phase 8 stage 5 — new tools.
@@ -145,6 +148,18 @@ CASES: list[dict[str, Any]] = [
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["expected_tool"])
 def test_llm_picks_correct_tool(case: dict[str, Any]) -> None:
+    """The expected tool must appear in the model's tool CHAIN (≤3 rounds).
+
+    The system prompt now permits look-before-acting chains — e.g. a what-if
+    legitimately reads get_schedule before preview_schedule_change. Asserting
+    on the first call alone failed those; chain membership still catches
+    genuinely wrong tool selection while allowing context gathering.
+
+    Intermediate tool results come from the real DB when WFM_DB_TEST_URL is
+    set, otherwise from a neutral stub (selection still observable).
+    """
+    import json as _json
+
     from anthropic import Anthropic
 
     from app.config import get_settings
@@ -153,16 +168,74 @@ def test_llm_picks_correct_tool(case: dict[str, Any]) -> None:
 
     settings = get_settings()
     client = Anthropic(api_key=settings.anthropic_api_key)
-    resp = client.messages.create(
-        model=settings.anthropic_model,
-        system=SYSTEM_PROMPT,
-        tools=all_definitions(),
-        messages=[{"role": "user", "content": case["prompt"]}],
-        max_tokens=512,
-    )
-    tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
-    assert tool_uses, f"Model did not call a tool for: {case['prompt']!r}"
-    assert tool_uses[0].name == case["expected_tool"], (
-        f"Expected {case['expected_tool']!r}, got {tool_uses[0].name!r} "
+
+    db = None
+    if os.environ.get("WFM_DB_TEST_URL"):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        db = sessionmaker(bind=create_engine(os.environ["WFM_DB_TEST_URL"]))()
+
+    prompt = case["prompt"]
+    if "{agent}" in prompt:
+        agent_name = "Adams"  # stub-mode fallback
+        if db is not None:
+            from sqlalchemy import text as _text
+
+            row = db.execute(
+                _text("SELECT full_name FROM agents WHERE active = TRUE "
+                      "ORDER BY id LIMIT 1")
+            ).scalar_one_or_none()
+            if row:
+                agent_name = row
+        prompt = prompt.replace("{agent}", agent_name)
+
+    def _result_for(block: Any) -> str:
+        if db is None:
+            return '{"render": "text", "content": "(result omitted in eval)"}'
+        from app.tools import dispatch
+
+        out = dispatch(block.name, block.input, db)
+        db.rollback()
+        return _json.dumps(out, default=str)
+
+    history: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+    called: list[str] = []
+    try:
+        for _round in range(3):
+            resp = client.messages.create(
+                model=settings.anthropic_model,
+                system=SYSTEM_PROMPT,
+                tools=all_definitions(),
+                messages=history,
+                max_tokens=1024,
+            )
+            tool_uses = [
+                b for b in resp.content if getattr(b, "type", None) == "tool_use"
+            ]
+            called.extend(b.name for b in tool_uses)
+            if case["expected_tool"] in called:
+                return  # chain reached the expected tool
+            if not tool_uses:
+                break
+            history.append({"role": "assistant", "content": resp.content})
+            history.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": b.id,
+                        "content": _result_for(b),
+                    }
+                    for b in tool_uses
+                ],
+            })
+    finally:
+        if db is not None:
+            db.close()
+
+    assert called, f"Model did not call a tool for: {case['prompt']!r}"
+    pytest.fail(
+        f"Expected {case['expected_tool']!r} in the tool chain, got {called!r} "
         f"for prompt {case['prompt']!r}"
     )

@@ -29,13 +29,13 @@ class Settings(BaseSettings):
 
     # Anthropic (Phase 6)
     anthropic_api_key: str | None = Field(None)
-    # Pinned to a dated 4.5 build because Sonnet 4.6 silently no-ops
-    # `cache_control` directives (verified against the API on 2026-05-01).
-    # The chat tool-use loop relies on prompt caching of the system + 8-tool
-    # registry; on 4.6 every iteration re-bills ~2200 tokens of static prefix.
-    # Pin a dated version (not the alias) for production stability — bump
-    # explicitly with eval-suite verification when revisiting.
-    anthropic_model: str = Field("claude-sonnet-4-5-20250929")
+    # Sonnet 4.6. The 2026-05-01 finding that 4.6 "silently no-ops
+    # cache_control" was a threshold artifact, not a bug: 4.6 raised the
+    # minimum cacheable prefix to 2048 tokens (4.5 needs 1024) and prefixes
+    # below the minimum silently don't cache. The registry was ~2200 est.
+    # tokens then — right at the line; with 42 tools it is far past it.
+    # Verified live 2026-06-10: usage.cache_read_input_tokens > 0 on 4.6.
+    anthropic_model: str = Field("claude-sonnet-4-6")
 
     # Phase 6 — single shared password gate.
     # Unset = open in dev. Set = required for /chat (and all routes per spec).

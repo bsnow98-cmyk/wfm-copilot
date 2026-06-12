@@ -117,7 +117,21 @@ real WFM database and present results inline.
 
 Operating rules:
 - The math is in the tools. Never invent numbers — call a tool.
-- Prefer one tool call per user turn. Pick the most specific tool.
+- Bias to action: when the user names a concrete person, queue, skill, or \
+  time, pull the data with the obvious tool immediately — do not ask for \
+  confirmation first. Ask a clarifying question only when the request is \
+  genuinely ambiguous (e.g. no queue named and several exist).
+- Never ask the user for an employee_id. Resolve a person's id yourself: \
+  get_schedule or rank_agents returns names with ids — look it up, then \
+  proceed with the original request.
+- Simple lookups take exactly one tool call — pick the most specific tool. \
+  Diagnostic questions ("why did we miss SL, and what should we do about it?") \
+  may chain 2-4 tools: pull the data, explain the miss, then recommend. Never \
+  re-call a tool you already called with the same arguments.
+- To act on a recommendation (overtime, VTO, shift coverage): once the user \
+  says to proceed, call preview_schedule_change with the proposed segment \
+  changes so they get a previewed, applyable change. Never describe a \
+  recommendation as if it were already applied — only the user can apply.
 - After a tool returns, write a one-sentence summary in plain language. The chart \
   or table renders inline; do not describe it field-by-field.
 - When the user references an anomaly id (monospace 16-hex), preserve it exactly \
@@ -130,7 +144,60 @@ Operating rules:
 Tone: direct, ops-people register. No hype. No "I'd be happy to help."
 """
 
-MAX_TOOL_ITERATIONS = 6
+# 8, up from 6: the system prompt now permits 2-4 tool chains for diagnostic
+# questions, and each chain link costs an iteration.
+MAX_TOOL_ITERATIONS = 8
+
+
+# Strict tool use: the API guarantees tool inputs match the schema (enums
+# included), retiring the model-sends-junk-args failure class at the platform
+# level. Strict mode requires additionalProperties:false on every object and
+# rejects numeric/string constraint keywords — handlers already re-validate
+# those server-side.
+#
+# The API caps strict mode hard (both verified live on 2026-06-10):
+#   - max 20 strict tools per request (400: "Too many strict tools (40)")
+#   - max 24 OPTIONAL params summed across strict tools (400: "too many
+#     optional parameters (26) ... limit: 24")
+# So strict goes where junk args are costly: the write-path tool plus the
+# enum-bearing tools (policies, orderings, activity types), trimmed to fit
+# the optional-param budget (currently 22/24 — get_exceptions was cut; its
+# enum misfires fail gracefully as empty filters). The rest still get sealed
+# schemas (deterministic bytes for the prompt cache) without the strict flag.
+_STRICT_TOOLS = frozenset({
+    "preview_schedule_change",  # the write path — junk args mint bad previews
+    "find_shift_coverage", "rank_agents", "recommend_ot", "recommend_vto",
+    "recommend_break_shift", "get_adherence",
+    "get_leave_requests", "get_training_calendar",
+})
+
+_STRICT_UNSUPPORTED_KEYS = frozenset(
+    {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+     "multipleOf", "minLength", "maxLength", "pattern",
+     "minItems", "maxItems", "uniqueItems"}
+)
+
+
+def _seal_schema(node: Any) -> Any:
+    if isinstance(node, dict):
+        sealed = {
+            k: _seal_schema(v)
+            for k, v in node.items()
+            if k not in _STRICT_UNSUPPORTED_KEYS
+        }
+        if sealed.get("type") == "object":
+            sealed.setdefault("additionalProperties", False)
+        return sealed
+    if isinstance(node, list):
+        return [_seal_schema(v) for v in node]
+    return node
+
+
+def _strict_tool(defn: dict[str, Any]) -> dict[str, Any]:
+    sealed = {**defn, "input_schema": _seal_schema(defn["input_schema"])}
+    if defn.get("name") in _STRICT_TOOLS:
+        sealed["strict"] = True
+    return sealed
 
 
 class ChatRequest(BaseModel):
@@ -245,7 +312,7 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
     initial handler returns and the StreamingResponse takes over.
     """
     settings = get_settings()
-    tools = all_definitions()
+    tools = [_strict_tool(d) for d in all_definitions()]
 
     persistence_warned = False
 
@@ -300,17 +367,22 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
                     system=SYSTEM_PROMPT,
                     tools=tools_cached,
                     messages=history,
-                    # 4096 is a deliberate ceiling for the chat loop:
-                    # - Most assistant turns are short (a one-sentence summary
-                    #   after a tool result). 1024 covers that easily.
-                    # - Tool-use turns can be longer when the model reasons
-                    #   before calling a tool. 2048 was hit occasionally per
-                    #   the audit. 4096 leaves headroom without paying for
-                    #   max_tokens we never use.
-                    # - If we ever see `stop_reason: "max_tokens"` in
-                    #   production, the explicit handler below surfaces a
-                    #   `truncated` SSE event so it's visible, not silent.
-                    max_tokens=4096,
+                    # Adaptive: the model decides when to think. Trivial
+                    # lookups skip it; explain_* diagnostics get real
+                    # reasoning. Thinking deltas are not forwarded to the
+                    # SSE stream (UI shows a pause), but the blocks ARE
+                    # preserved in history — the API requires them intact
+                    # on tool-use round-trips (see _block_to_dict).
+                    thinking={"type": "adaptive"},
+                    # Sonnet 4.6 defaults to effort=high; medium keeps the
+                    # chat loop's latency/cost profile close to the old 4.5
+                    # behavior while still allowing deep diagnostic turns.
+                    output_config={"effort": "medium"},
+                    # 8192 ceiling (was 4096 pre-thinking): thinking tokens
+                    # count toward max_tokens. stop_reason=max_tokens still
+                    # surfaces a `truncated` SSE event below, so a too-low
+                    # ceiling is visible, never silent.
+                    max_tokens=8192,
                 )
             except (RateLimitError, APIConnectionError, APIStatusError) as exc:
                 # Anthropic SDK builds the stream lazily, so most transient
@@ -521,6 +593,17 @@ def _block_to_dict(block: Any) -> dict[str, Any]:
             "name": block.name,
             "input": block.input,
         }
+    # Thinking blocks must round-trip VERBATIM (text + signature): the API
+    # validates the signature when history is replayed on a tool-use loop.
+    # Mangling them into the fallback shape 400s the next iteration.
+    if btype == "thinking":
+        return {
+            "type": "thinking",
+            "thinking": block.thinking,
+            "signature": block.signature,
+        }
+    if btype == "redacted_thinking":
+        return {"type": "redacted_thinking", "data": block.data}
     # Fallback for unknown block types.
     return {"type": btype or "unknown", "raw": str(block)}
 

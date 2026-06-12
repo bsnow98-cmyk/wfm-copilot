@@ -31,3 +31,4 @@ build/
 data/
 !backend/scripts/sample_data/
 backend/backups/
+docker-compose.override.yml
