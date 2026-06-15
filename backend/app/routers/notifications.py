@@ -1,10 +1,12 @@
 """
 /notifications router — cherry-pick D, decision D-3.
 
-Three endpoints:
-  GET  /notifications              — feed + unread count for the badge
-  POST /notifications/{id}/read    — mark one read
-  POST /notifications/read-all     — zero out the badge
+Endpoints:
+  GET  /notifications                 — feed + unread count for the badge
+  POST /notifications/{id}/read       — mark one read
+  POST /notifications/read-all        — zero out the badge
+  POST /notifications/daily-briefing  — compose + post the morning briefing
+                                        (cron-triggered; idempotent per day)
 """
 from __future__ import annotations
 
@@ -27,6 +29,24 @@ from app.services.notifications import (
 
 log = logging.getLogger("wfm.notifications.router")
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+@router.post("/daily-briefing")
+def post_daily_briefing(
+    force: bool = False, db: Session = Depends(get_db)
+) -> dict:
+    """Compose today's briefing and post it to the feed.
+
+    Behind the global Basic-auth gate like everything else. `force=true`
+    bypasses the once-per-day guard (manual re-runs, demos).
+    """
+    from app.services.daily_briefing import generate_daily_briefing
+
+    try:
+        return generate_daily_briefing(db, force=force)
+    except Exception as exc:  # noqa: BLE001 — cron caller needs a clean signal
+        log.exception("Daily briefing failed")
+        raise HTTPException(502, f"briefing generation failed: {type(exc).__name__}")
 
 
 @router.get("", response_model=NotificationsListResponse)

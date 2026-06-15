@@ -25,7 +25,7 @@ definition: dict[str, Any] = {
         "properties": {
             "queue": {
                 "type": "string",
-                "description": "Queue name (e.g. 'sales_inbound').",
+                "description": "Queue name. Real queues: 'all' (aggregate) or 'skills' (per-skill).",
             },
             "date": {
                 "type": "string",

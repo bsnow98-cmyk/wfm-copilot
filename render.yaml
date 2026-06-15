@@ -44,9 +44,10 @@ services:
 
       # Non-secret config.
       - key: ANTHROPIC_MODEL
-        # 4.5 dated, not 4-6, because 4-6 doesn't honour cache_control
-        # (silently no-ops). The chat tool-use loop depends on prompt caching.
-        value: claude-sonnet-4-5-20250929
+        # The old "4.6 doesn't honour cache_control" finding was the 2048-token
+        # minimum-cacheable-prefix threshold (4.5 needs only 1024), not a bug —
+        # the 42-tool registry is far past it now. See app/config.py.
+        value: claude-sonnet-4-6
       - key: LOG_LEVEL
         value: INFO
       - key: TOOL_TIMEOUT_SECONDS

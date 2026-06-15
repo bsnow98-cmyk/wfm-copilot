@@ -1,0 +1,31 @@
+name: Daily briefing
+
+# Triggers the copilot's morning briefing on the prod API. The endpoint is
+# idempotent per calendar day, so overlapping runs / retries can't double-post.
+#
+# Required repo secret: WFM_DEMO_PASSWORD (same value as the Render env var).
+
+on:
+  schedule:
+    - cron: "0 12 * * *" # 12:00 UTC daily (~7am US Central)
+  workflow_dispatch: {} # manual runs from the Actions tab
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /notifications/daily-briefing
+        run: |
+          # Render free/starter tiers can cold-start; retry a few times.
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /tmp/out.json -w '%{http_code}' \
+              -u "demo:${{ secrets.WFM_DEMO_PASSWORD }}" \
+              -X POST \
+              "https://wfm-copilot-api.onrender.com/notifications/daily-briefing")
+            echo "attempt $attempt -> HTTP $code"
+            cat /tmp/out.json || true
+            [ "$code" = "200" ] && exit 0
+            sleep 30
+          done
+          echo "briefing trigger failed after 3 attempts" >&2
+          exit 1

@@ -22,9 +22,11 @@ definition: dict[str, Any] = {
     "description": (
         "Explain how multi-skill staffing math arrived at the required "
         "headcount for a particular (queue, skill). Cites the substitution "
-        "discount, the proficiency floor, and the secondary-credit FTE. Use "
-        "when the user asks 'why is this staffing right?' or 'where did "
-        "that number come from?'."
+        "discount, the proficiency floor, and the secondary-credit FTE. Call "
+        "this whenever the user asks WHY a queue or skill needs that many "
+        "agents, asks for 'the substitution math', the derivation, or 'where "
+        "did that number come from?'. Prefer this over get_skills_coverage "
+        "when the question is why/how rather than what."
     ),
     "input_schema": {
         "type": "object",
