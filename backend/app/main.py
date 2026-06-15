@@ -87,3 +87,30 @@ async def on_startup() -> None:
     except Exception:
         log.exception("Migration runner failed — API will still start, "
                       "but the DB may be on an older schema.")
+
+    # Self-heal the demo sim clock: it advances with real time, so after
+    # ~a week it drifts past the seeded shift window and the live ticker
+    # reads into the void. Cheap no-op when the clock is in range.
+    try:
+        from app.db import SessionLocal
+        from app.services.realtime_clock import ensure_sim_anchor_in_window
+
+        with SessionLocal() as db:
+            if ensure_sim_anchor_in_window(db):
+                log.info("Sim clock re-anchored into the seeded data window.")
+    except Exception:
+        log.exception("Sim-anchor check failed — API will still start.")
+
+    # Fail-fast for jobs orphaned by a restart: BackgroundTasks die with the
+    # process, and a row stuck at pending/running spins polling clients
+    # forever. Only rows past the staleness threshold are touched.
+    try:
+        from app.db import SessionLocal
+        from app.services.job_sweeper import sweep_orphaned_jobs
+
+        with SessionLocal() as db:
+            counts = sweep_orphaned_jobs(db)
+            if any(counts.values()):
+                log.info("Orphaned-job sweep: %s", counts)
+    except Exception:
+        log.exception("Orphaned-job sweep failed — API will still start.")

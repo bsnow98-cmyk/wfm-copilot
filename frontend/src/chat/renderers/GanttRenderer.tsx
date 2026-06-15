@@ -27,9 +27,12 @@ const ACTIVITY_LABEL: Record<GanttActivity, string> = {
 const DAY_START_MIN = 0;
 const DAY_END_MIN = 24 * 60;
 
+// Read HH:MM straight off the ISO string. The backend always emits UTC wall
+// time ("2026-06-10T09:00:00", "...Z", or "...+00:00" — HH:MM sits at 11..16
+// in every shape). Parsing via `new Date()` + getHours() shifted bars by the
+// viewer's UTC offset (a 9am UTC shift rendered at 4am for US-Eastern).
 function toMinutes(iso: string): number {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
+  return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 }
 
 export function GanttRenderer({
@@ -226,11 +229,8 @@ function MiniGantt({ agents }: { agents: Extract<ToolResponse, { render: "gantt"
           <div className="px-2 py-1 truncate">{a.name}</div>
           <div className="relative h-5 bg-surface-subtle">
             {a.segments.map((s, i) => {
-              const start = new Date(s.start);
-              const end = new Date(s.end);
-              const minutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
-              const left = (minutes(start) * 100) / (24 * 60);
-              const width = ((minutes(end) - minutes(start)) * 100) / (24 * 60);
+              const left = (toMinutes(s.start) * 100) / (24 * 60);
+              const width = ((toMinutes(s.end) - toMinutes(s.start)) * 100) / (24 * 60);
               return (
                 <div
                   key={i}

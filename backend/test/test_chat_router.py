@@ -24,6 +24,17 @@ import pytest
 from app.routers import chat as chat_router
 
 
+@pytest.fixture(autouse=True)
+def _reset_anthropic_client_cache() -> Iterator[None]:
+    """_get_anthropic_client() memoizes the client in a module global. Without
+    this reset, the first test's patched Anthropic mock stays cached and every
+    later test's `patch.object(chat_router, "Anthropic", ...)` is silently
+    ignored — its exhausted stream iterator then raises StopIteration."""
+    chat_router._anthropic_client = None
+    yield
+    chat_router._anthropic_client = None
+
+
 # --------------------------------------------------------------------------
 # Fakes for the Anthropic streaming surface.
 # --------------------------------------------------------------------------
@@ -213,9 +224,13 @@ def test_anthropic_stream_error_emits_error_event_and_stops() -> None:
     ):
         events = _drain_stream("hi", "conv-error")
 
+    # Internal error details are deliberately NOT leaked to the client — the
+    # exception type is logged server-side and the SSE event carries a
+    # sanitized message (see the retry note above _stream_chat).
     assert any(
-        e["type"] == "error" and "bad key" in e["message"] for e in events
-    ), f"expected error event with the underlying message, got {events}"
+        e["type"] == "error" and "model service" in e["message"].lower()
+        for e in events
+    ), f"expected sanitized error event, got {events}"
     # After an error we stop — no done event, no further turns.
     assert not any(e["type"] == "done" for e in events)
 

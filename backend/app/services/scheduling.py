@@ -91,6 +91,62 @@ class ScheduleService:
         self.db = db
 
     # ----- public entry point ---------------------------------------
+    def create_pending(
+        self,
+        staffing_id: int,
+        name: str | None = None,
+        horizon_days: int = 7,
+    ) -> int:
+        """Validate inputs and insert the schedule row in 'pending' state.
+
+        Cheap (a few SELECTs + one INSERT) — safe to run inline in the request.
+        The actual CP-SAT solve runs later via solve(schedule_id=...) in a
+        background task; clients poll GET /schedules/{id} for solver_status.
+        """
+        staffing = self.db.execute(
+            text("SELECT id FROM staffing_requirements WHERE id=:id"),
+            {"id": staffing_id},
+        ).mappings().first()
+        if not staffing:
+            raise ValueError(f"staffing_requirements id={staffing_id} not found")
+
+        first_ts = self.db.execute(
+            text("""
+                SELECT interval_start FROM staffing_requirement_intervals
+                WHERE staffing_id = :id ORDER BY interval_start LIMIT 1
+            """),
+            {"id": staffing_id},
+        ).scalar_one_or_none()
+        if first_ts is None:
+            raise ValueError(f"No intervals on staffing {staffing_id}")
+
+        has_agents = self.db.execute(
+            text("SELECT 1 FROM agents WHERE active=TRUE LIMIT 1"),
+        ).scalar_one_or_none()
+        if not has_agents:
+            raise ValueError(
+                "No active agents in DB. Run `python -m scripts.seed_agents` first."
+            )
+
+        # Same snap-to-midnight the solver uses, so start_date matches.
+        first_day = first_ts.replace(hour=0, minute=0, second=0, microsecond=0)
+        row = self.db.execute(
+            text("""
+                INSERT INTO schedules
+                    (name, start_date, end_date, status, staffing_id, solver_status)
+                VALUES (:name, :start, :end, 'draft', :sid, 'pending')
+                RETURNING id
+            """),
+            {
+                "name": name or f"Auto-scheduled (staffing={staffing_id})",
+                "start": first_day.date(),
+                "end": first_day.date() + timedelta(days=horizon_days),
+                "sid": staffing_id,
+            },
+        ).fetchone()
+        self.db.commit()
+        return int(row[0])
+
     def solve(
         self,
         staffing_id: int,
@@ -101,78 +157,105 @@ class ScheduleService:
         min_rest_hours: int = MIN_REST_HOURS,
         max_consecutive_days: int = MAX_CONSECUTIVE_DAYS,
         max_solve_time_seconds: int = DEFAULT_SOLVE_TIME_S,
+        schedule_id: int | None = None,
     ) -> SolverSummary:
         """Run the CP-SAT model. Persists schedule + shift_segments + coverage.
+
+        When `schedule_id` is given, it is a row pre-created by
+        create_pending(); we claim it (pending -> running) and mark it failed
+        on ANY exception so a polling client never sees it stuck. Without
+        `schedule_id` (direct/seed-script use) behavior is unchanged: the row
+        is created here.
 
         Returns SolverSummary describing how it went.
         """
         t_start = time.time()
 
-        # 1. Load staffing requirement intervals (the demand to cover).
-        staffing = self.db.execute(
-            text("SELECT id, forecast_run_id FROM staffing_requirements WHERE id=:id"),
-            {"id": staffing_id},
-        ).mappings().first()
-        if not staffing:
-            raise ValueError(f"staffing_requirements id={staffing_id} not found")
+        try:
+            # 1. Load staffing requirement intervals (the demand to cover).
+            staffing = self.db.execute(
+                text("SELECT id, forecast_run_id FROM staffing_requirements WHERE id=:id"),
+                {"id": staffing_id},
+            ).mappings().first()
+            if not staffing:
+                raise ValueError(f"staffing_requirements id={staffing_id} not found")
 
-        all_intervals = self.db.execute(
-            text("""
-                SELECT interval_start, required_agents
-                FROM staffing_requirement_intervals
-                WHERE staffing_id = :id
-                ORDER BY interval_start
-            """),
-            {"id": staffing_id},
-        ).mappings().all()
-        if not all_intervals:
-            raise ValueError(f"No intervals on staffing {staffing_id}")
+            all_intervals = self.db.execute(
+                text("""
+                    SELECT interval_start, required_agents
+                    FROM staffing_requirement_intervals
+                    WHERE staffing_id = :id
+                    ORDER BY interval_start
+                """),
+                {"id": staffing_id},
+            ).mappings().all()
+            if not all_intervals:
+                raise ValueError(f"No intervals on staffing {staffing_id}")
 
-        # 2. Load agents (limit to first N if requested).
-        agent_query = "SELECT id, employee_id, full_name FROM agents WHERE active=TRUE ORDER BY id"
-        if agent_count:
-            agent_query += f" LIMIT {int(agent_count)}"
-        agents = self.db.execute(text(agent_query)).mappings().all()
-        if not agents:
-            raise ValueError(
-                "No active agents in DB. Run `python -m scripts.seed_agents` first."
+            # 2. Load agents (limit to first N if requested).
+            agent_query = "SELECT id, employee_id, full_name FROM agents WHERE active=TRUE ORDER BY id"
+            if agent_count:
+                agent_query += f" LIMIT {int(agent_count)}"
+            agents = self.db.execute(text(agent_query)).mappings().all()
+            if not agents:
+                raise ValueError(
+                    "No active agents in DB. Run `python -m scripts.seed_agents` first."
+                )
+            log.info("Solving for %d agents over %d days", len(agents), horizon_days)
+
+            # 3. Slice the staffing intervals to our horizon (start at earliest interval).
+            first_ts = all_intervals[0]["interval_start"]
+            # Snap to midnight UTC of that day (we model day-granular shifts).
+            first_day = first_ts.replace(hour=0, minute=0, second=0, microsecond=0)
+            horizon_end = first_day + timedelta(days=horizon_days)
+            horizon_intervals = [
+                iv for iv in all_intervals
+                if first_day <= iv["interval_start"] < horizon_end
+            ]
+            if len(horizon_intervals) < INTERVALS_PER_DAY * horizon_days * 0.5:
+                log.warning(
+                    "Staffing covers only %d intervals in horizon (expected ~%d). "
+                    "Forecast may be shorter than horizon_days.",
+                    len(horizon_intervals), INTERVALS_PER_DAY * horizon_days,
+                )
+
+            # Build a (day_idx, slot_idx) -> required map.
+            required: dict[tuple[int, int], int] = {}
+            for iv in horizon_intervals:
+                ts = iv["interval_start"]
+                day_idx = (ts - first_day).days
+                slot_idx = (ts.hour * 60 + ts.minute) // INTERVAL_MIN
+                required[(day_idx, slot_idx)] = int(iv["required_agents"])
+            # Closed-hour intervals not in the staffing data default to 0 demand.
+        except Exception as exc:
+            if schedule_id is not None:
+                self.db.rollback()
+                self._mark_failed(schedule_id, str(exc), time.time() - t_start)
+            raise
+
+        # 4. Insert the schedule row in 'running' state — or claim the
+        #    pre-created pending row.
+        if schedule_id is None:
+            schedule_id = self._create_schedule_row(
+                staffing_id=staffing_id,
+                name=name or f"Auto-scheduled (staffing={staffing_id})",
+                start_date=first_day.date(),
+                horizon_days=horizon_days,
             )
-        log.info("Solving for %d agents over %d days", len(agents), horizon_days)
-
-        # 3. Slice the staffing intervals to our horizon (start at earliest interval).
-        first_ts = all_intervals[0]["interval_start"]
-        # Snap to midnight UTC of that day (we model day-granular shifts).
-        first_day = first_ts.replace(hour=0, minute=0, second=0, microsecond=0)
-        horizon_end = first_day + timedelta(days=horizon_days)
-        horizon_intervals = [
-            iv for iv in all_intervals
-            if first_day <= iv["interval_start"] < horizon_end
-        ]
-        if len(horizon_intervals) < INTERVALS_PER_DAY * horizon_days * 0.5:
-            log.warning(
-                "Staffing covers only %d intervals in horizon (expected ~%d). "
-                "Forecast may be shorter than horizon_days.",
-                len(horizon_intervals), INTERVALS_PER_DAY * horizon_days,
+        else:
+            self.db.execute(
+                text("""
+                    UPDATE schedules
+                    SET solver_status = 'running', started_at = NOW()
+                    WHERE id = :id
+                """),
+                {"id": schedule_id},
             )
+            self.db.commit()
 
-        # Build a (day_idx, slot_idx) -> required map.
-        required: dict[tuple[int, int], int] = {}
-        for iv in horizon_intervals:
-            ts = iv["interval_start"]
-            day_idx = (ts - first_day).days
-            slot_idx = (ts.hour * 60 + ts.minute) // INTERVAL_MIN
-            required[(day_idx, slot_idx)] = int(iv["required_agents"])
-        # Closed-hour intervals not in the staffing data default to 0 demand.
-
-        # 4. Insert the schedule row in 'running' state.
-        schedule_id = self._create_schedule_row(
-            staffing_id=staffing_id,
-            name=name or f"Auto-scheduled (staffing={staffing_id})",
-            start_date=first_day.date(),
-            horizon_days=horizon_days,
-        )
-
-        # 5. Build and solve the CP-SAT model.
+        # 5. Build and solve the CP-SAT model, then persist. Any failure —
+        #    solver OR persistence — marks the row failed so it never sticks
+        #    at 'running'.
         try:
             model_result = self._build_and_solve(
                 agents=agents,
@@ -183,25 +266,27 @@ class ScheduleService:
                 max_consecutive_days=max_consecutive_days,
                 max_solve_time_seconds=max_solve_time_seconds,
             )
+
+            # 6. Persist results.
+            segments_written = self._write_shift_segments(
+                schedule_id=schedule_id,
+                agents=agents,
+                assignments=model_result["assignments"],
+                first_day=first_day,
+            )
+            coverage_written = self._write_coverage(
+                schedule_id=schedule_id,
+                horizon_days=horizon_days,
+                first_day=first_day,
+                required=required,
+                coverage=model_result["coverage"],
+            )
         except Exception as exc:
+            self.db.rollback()
             self._mark_failed(schedule_id, str(exc), time.time() - t_start)
             log.exception("Solve failed")
             raise
 
-        # 6. Persist results.
-        segments_written = self._write_shift_segments(
-            schedule_id=schedule_id,
-            agents=agents,
-            assignments=model_result["assignments"],
-            first_day=first_day,
-        )
-        coverage_written = self._write_coverage(
-            schedule_id=schedule_id,
-            horizon_days=horizon_days,
-            first_day=first_day,
-            required=required,
-            coverage=model_result["coverage"],
-        )
         runtime = time.time() - t_start
         self._mark_completed(
             schedule_id=schedule_id,

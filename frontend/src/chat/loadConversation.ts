@@ -1,7 +1,5 @@
 import type { ChatTurn, ToolCall, ToolResponse } from "./types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "@/lib/backendProxy";
 
 type ServerMessage = {
   id: string;
@@ -22,15 +20,9 @@ type ServerMessage = {
 export async function loadConversation(
   conversationId: string,
 ): Promise<ChatTurn[] | null> {
-  if (!API_BASE) return null;
+  if (!HAS_BACKEND) return null;
 
-  const headers: Record<string, string> = {};
-  if (DEMO_PASSWORD) headers.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-
-  const res = await fetch(
-    `${API_BASE}/chat/conversations/${conversationId}`,
-    { headers },
-  );
+  const res = await fetch(`${PROXY_BASE}/chat/conversations/${conversationId}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`load conversation ${res.status}`);
 

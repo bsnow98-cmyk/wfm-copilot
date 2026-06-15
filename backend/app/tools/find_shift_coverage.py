@@ -81,6 +81,11 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     skill_name: str | None = args.get("skill")
     limit: int = int(args.get("limit", 10))
     policy: str = args.get("policy") or "skill_match_then_junior"
+    # Allowlist before SQL interpolation — model input is adversarial input.
+    # Unknown values clamp to the default so the title reflects what ran.
+    _policy_dirs = {"skill_match_then_junior": "DESC", "skill_match_then_senior": "ASC"}
+    if policy not in _policy_dirs:
+        policy = "skill_match_then_junior"
 
     win_start = datetime(
         target_date.year, target_date.month, target_date.day,
@@ -131,7 +136,7 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     # Pull candidates: active agents with no overlapping work shift.
     # Join agent_skills filtered to the requested skill (if any) — agents
     # without that skill drop out for skill-required searches.
-    seniority_dir = "DESC" if policy == "skill_match_then_junior" else "ASC"
+    seniority_dir = _policy_dirs[policy]
     if skill_id is not None:
         sql = f"""
             SELECT a.id, a.full_name, a.employee_id, a.hire_date,

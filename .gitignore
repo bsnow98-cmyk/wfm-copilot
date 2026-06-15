@@ -30,3 +30,4 @@ build/
 *.parquet
 data/
 !backend/scripts/sample_data/
+backend/backups/

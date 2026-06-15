@@ -77,10 +77,12 @@ services:
 
 databases:
   - name: wfm-copilot-db
-    # `free` Postgres tier — $0, 1GB storage, expires after 90 days.
-    # Fine for the demo window. When you want non-expiring, swap to one of
-    # Render's current paid tiers (check the dashboard's create-database
-    # dropdown for the exact plan name — they've been renaming).
+    # `free` Postgres tier — $0, 1GB storage. EXPIRES AFTER ~30 DAYS, not 90:
+    # on 2026-06-06 this DB expired ~1 month after creation, was suspended,
+    # and flagged for deletion in 7 days (the API's internal host stopped
+    # resolving). For a persistent demo, swap to a paid tier (`basic_256mb`,
+    # ~$6/mo) — check the dashboard's create-database dropdown for the exact
+    # plan name (they've been renaming). See Deploy Lessons Learned 2026-06-06.
     plan: free
     postgresMajorVersion: "16"
     # IPs allowed to connect. Defaults to "0.0.0.0/0" (any IP) on Render —

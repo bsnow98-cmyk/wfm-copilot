@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.services.realtime_clock import sim_now
+from app.services.realtime_clock import maybe_ensure_sim_anchor, sim_now
 
 router = APIRouter(prefix="/intraday", tags=["intraday"])
 
@@ -40,6 +40,10 @@ def get_today(
     queue: str = "auto",
     db: Session = Depends(get_db),
 ) -> IntradayToday:
+    # This view is exactly what breaks when the sim clock drifts past the
+    # seeded data, and a long-lived process never hits the startup heal —
+    # so check (throttled, never raises) on the way in.
+    maybe_ensure_sim_anchor(db)
     now = sim_now(db)
     day_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
     day_end = day_start + timedelta(days=1)

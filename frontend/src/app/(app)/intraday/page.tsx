@@ -74,11 +74,16 @@ export default function IntradayPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchIntradayToday().then((d) => {
-      if (!cancelled) setLive(d);
-    });
+    const load = () =>
+      fetchIntradayToday().then((d) => {
+        if (!cancelled) setLive(d);
+      });
+    load();
+    // The subtitle promises "refreshed every 5 minutes" — keep it honest.
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 

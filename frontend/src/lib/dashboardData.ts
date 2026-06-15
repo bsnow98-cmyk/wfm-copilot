@@ -10,25 +10,18 @@
  * No throws. Page-level rendering should never break because the API blinked.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+import { HAS_BACKEND, PROXY_BASE } from "./backendProxy";
+
 const FETCH_TIMEOUT_MS = 4500;
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  if (DEMO_PASSWORD) h.Authorization = "Basic " + btoa(`demo:${DEMO_PASSWORD}`);
-  return h;
-}
-
-export const HAS_API: boolean = Boolean(API_BASE);
+export const HAS_API: boolean = HAS_BACKEND;
 
 async function getJSON<T>(path: string): Promise<T | null> {
-  if (!API_BASE) return null;
+  if (!HAS_BACKEND) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      headers: authHeaders(),
+    const res = await fetch(`${PROXY_BASE}${path}`, {
       signal: controller.signal,
     });
     if (!res.ok) return null;
@@ -49,6 +42,7 @@ type ForecastRun = {
   status: string;
   mape: number | null;
   wape: number | null;
+  skill_id: number | null;
 };
 
 type ForecastInterval = {
@@ -131,10 +125,22 @@ export type ForecastDashboardData = {
   intervals: ForecastInterval[];
 };
 
-export async function fetchLatestForecast(): Promise<ForecastDashboardData | null> {
-  const runs = await getJSON<ForecastRun[]>("/forecasts?limit=10");
+export async function fetchLatestForecast(
+  skillId?: number | null,
+): Promise<ForecastDashboardData | null> {
+  // With a skill selected, only consider that skill's runs — otherwise the
+  // chart can show Support data while the picker says Sales.
+  const skillParam = skillId != null ? `&skill_id=${skillId}` : "";
+  const runs = await getJSON<ForecastRun[]>(`/forecasts?limit=10${skillParam}`);
   if (!runs || runs.length === 0) return null;
-  const run = runs.find((r) => r.status === "completed") ?? runs[0];
+  // Unfiltered view: prefer the aggregate run (skill_id null) so "All skills"
+  // doesn't show whichever single skill happened to forecast last.
+  const run =
+    (skillId == null
+      ? runs.find((r) => r.status === "completed" && r.skill_id == null)
+      : undefined) ??
+    runs.find((r) => r.status === "completed") ??
+    runs[0];
   const intervals = await getJSON<ForecastInterval[]>(
     `/forecasts/${run.id}/intervals`,
   );

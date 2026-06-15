@@ -38,4 +38,7 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
+        # Roll back any transaction an exception left open — Session.close()
+        # alone returns the connection to the pool mid-transaction.
+        db.rollback()
         db.close()
