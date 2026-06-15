@@ -119,8 +119,11 @@ Operating rules:
 - The math is in the tools. Never invent numbers — call a tool.
 - Bias to action: when the user names a concrete person, queue, skill, or \
   time, pull the data with the obvious tool immediately — do not ask for \
-  confirmation first. Ask a clarifying question only when the request is \
-  genuinely ambiguous (e.g. no queue named and several exist).
+  confirmation first. For overall/aggregate questions that need a queue but \
+  name none ("how's our forecast", "why did we miss SL"), DEFAULT to the \
+  aggregate queue from "Your data" below — never ask the user to pick one. \
+  Ask a clarifying question only if the user names a queue you don't \
+  recognize from that list.
 - Never ask the user for an employee_id. Resolve a person's id yourself: \
   get_schedule or rank_agents returns names with ids — look it up, then \
   proceed with the original request.
@@ -143,6 +146,55 @@ Operating rules:
 
 Tone: direct, ops-people register. No hype. No "I'd be happy to help."
 """
+
+
+def build_system_prompt(db: Session) -> str:
+    """SYSTEM_PROMPT + a live "Your data" section so the model knows which
+    queues/skills actually exist. Without this it invents queue names
+    (suggested 'sales_inbound' when the real queues are 'all'/'skills') and
+    asks the user to pick a queue instead of defaulting to the aggregate.
+
+    The list is read from the DB and sorted, so it's byte-stable across
+    requests as long as the catalog doesn't change — the prompt cache holds.
+    Falls back to the static prompt if the catalog query fails.
+    """
+    try:
+        queues = sorted(
+            r[0] for r in db.execute(
+                text("SELECT DISTINCT queue FROM forecast_runs WHERE status='completed'")
+            ).all()
+        )
+        skills = sorted(
+            r[0] for r in db.execute(text("SELECT name FROM skills")).all()
+        )
+    except Exception:  # noqa: BLE001 — never let catalog lookup break chat
+        log.exception("Queue/skill catalog lookup failed; using base prompt")
+        return SYSTEM_PROMPT
+
+    if not queues:
+        return SYSTEM_PROMPT
+
+    # The aggregate queue is the one that isn't the per-skill container.
+    aggregate = "all" if "all" in queues else queues[0]
+    per_skill = "skills" if "skills" in queues else None
+
+    lines = [
+        "",
+        "Your data right now:",
+        f"- Queues: {', '.join(queues)}.",
+        f"- For overall/aggregate questions (forecast accuracy, SL miss, "
+        f"intraday, staffing totals), use queue '{aggregate}'. Default to it "
+        f"when the user names no queue — do not ask.",
+    ]
+    if per_skill and skills:
+        lines.append(
+            f"- Per-skill staffing lives under queue '{per_skill}', skills: "
+            f"{', '.join(skills)}. For per-skill questions (e.g. 'why does "
+            f"sales need that many agents', the substitution math), call the "
+            f"tool with queue='{per_skill}' and skill='<name>'."
+        )
+    return SYSTEM_PROMPT + "\n".join(lines) + "\n"
+
 
 # 8, up from 6: the system prompt now permits 2-4 tool chains for diagnostic
 # questions, and each chain link costs an iteration.
@@ -338,6 +390,9 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
         )
 
     with SessionLocal() as db:
+        # Build once per stream — same prompt across the tool-loop iterations
+        # keeps the cached prefix byte-stable within a turn.
+        system_prompt = build_system_prompt(db)
         history = _load_history(db, conversation_id)
         history.append({"role": "user", "content": message})
         user_msg_id = _persist_message(db, conversation_id, "user", message)
@@ -364,7 +419,7 @@ async def _stream_chat(message: str, conversation_id: str) -> Any:
             try:
                 stream_ctx = _get_anthropic_client().messages.stream(
                     model=settings.anthropic_model,
-                    system=SYSTEM_PROMPT,
+                    system=system_prompt,
                     tools=tools_cached,
                     messages=history,
                     # Adaptive: the model decides when to think. Trivial
