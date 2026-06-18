@@ -23,6 +23,7 @@ from app.tools import (
     compare_scenarios,
     get_anomalies,
     get_forecast,
+    get_long_range_forecast,
     get_schedule,
     get_staffing,
     preview_schedule_change,
@@ -76,6 +77,7 @@ ToolHandler = Callable[[dict[str, Any], Session], dict[str, Any]]
 _MODULES = [
     # Phase 6 base
     get_forecast,
+    get_long_range_forecast,
     get_staffing,
     get_schedule,
     get_anomalies,
