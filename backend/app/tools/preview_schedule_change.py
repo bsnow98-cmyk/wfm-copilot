@@ -2,8 +2,12 @@
 preview_schedule_change tool — read-only diff preview.
 
 Loads the existing schedule for a date and returns the gantt with one or more
-proposed segment changes overlaid. PURE PREVIEW — does not write to the DB.
-The mutating apply path is deferred (TODOS — D).
+proposed segment changes overlaid. This tool itself never writes to the DB —
+it's read-only. But when the preview targets a writable schedule it also mints
+an apply_token + schedule_version (see below), which the frontend's Apply
+button presents to POST /schedules/apply. The mutating apply path (cherry-pick
+D) is implemented in app/routers/schedule_changes.py + app/services/apply_tokens.py;
+the LLM can preview but can never apply directly.
 """
 from __future__ import annotations
 
