@@ -94,6 +94,14 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     day_start = datetime.combine(target, datetime.min.time(), tzinfo=timezone.utc)
     day_end = day_start + timedelta(days=1)
 
+    # Scope the existing-segment load to the SAME schedule the apply will
+    # target (the one find_schedule_for_date picked). Without this predicate
+    # the query merged segments from every schedule whose range covers the
+    # date — so when two schedules overlap a date, the preview showed a union
+    # the apply could never produce, and a real edit could summarize as "No
+    # effective change." When schedule_id is None (no schedule covers the
+    # date) the CAST(NULL) yields zero rows: an empty roster, no apply token,
+    # which is the honest preview. CAST avoids psycopg3's untyped-NULL error.
     rows = (
         db.execute(
             text(
@@ -102,11 +110,12 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
                        s.segment_type, s.start_time, s.end_time
                 FROM shift_segments s
                 JOIN agents a ON a.id = s.agent_id
-                WHERE s.start_time < :end AND s.end_time > :start
+                WHERE s.schedule_id = CAST(:sched AS BIGINT)
+                  AND s.start_time < :end AND s.end_time > :start
                 ORDER BY a.full_name, s.start_time
                 """
             ),
-            {"start": day_start, "end": day_end},
+            {"sched": schedule_id, "start": day_start, "end": day_end},
         )
         .mappings()
         .all()
