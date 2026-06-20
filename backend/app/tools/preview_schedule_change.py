@@ -130,8 +130,8 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     # proposed segment so the user can still see the preview.
     for ch in changes:
         agent_id = ch["agent_id"]
-        proposed_start = datetime.fromisoformat(ch["start"])
-        proposed_end = datetime.fromisoformat(ch["end"])
+        proposed_start = _parse_iso_utc(ch["start"])
+        proposed_end = _parse_iso_utc(ch["end"])
         if agent_id not in by_agent:
             by_agent[agent_id] = {
                 "id": agent_id,
@@ -182,6 +182,28 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
 
 
 def _overlaps(a_start: str, a_end: str, b_start: datetime, b_end: datetime) -> bool:
-    a0 = datetime.fromisoformat(a_start)
-    a1 = datetime.fromisoformat(a_end)
-    return a0 < b_end and a1 > b_start
+    # Normalize BOTH sides to tz-aware UTC. The segment side arrives as ISO
+    # strings (tz-aware, from Postgres timestamptz); the proposed side may be
+    # naive if a caller forgot to coerce it. Coercing here makes the function
+    # safe no matter how it's called.
+    a0 = _parse_iso_utc(a_start)
+    a1 = _parse_iso_utc(a_end)
+    b0 = _coerce_utc(b_start)
+    b1 = _coerce_utc(b_end)
+    return a0 < b1 and a1 > b0
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    """Parse an ISO datetime, treating a naive value as UTC.
+
+    The LLM supplies naive datetimes (its tool schema just says "ISO
+    datetime"), while DB segment times round-trip through Postgres `timestamptz`
+    and come back tz-aware. Comparing the two raises TypeError. We coerce naive
+    → UTC, matching `schedule_change._parse_dt` so preview and apply agree on
+    what "17:00" means.
+    """
+    return _coerce_utc(datetime.fromisoformat(value))
+
+
+def _coerce_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
