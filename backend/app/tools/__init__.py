@@ -37,6 +37,7 @@ from app.tools import (
     get_intraday_gaps,
     get_occupancy,
     get_top_risks,
+    preview_forecast_override,
     recommend_ot,
     preview_offer,
     recommend_skill_rebalance,
@@ -97,6 +98,7 @@ _MODULES = [
     find_shift_coverage,
     recommend_skill_rebalance,
     preview_offer,
+    preview_forecast_override,
     get_occupancy,
     # Wave 3 — adherence
     get_adherence,

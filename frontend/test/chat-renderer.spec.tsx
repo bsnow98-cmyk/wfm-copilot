@@ -138,4 +138,25 @@ describe("ToolResponseRenderer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/09:00–12:00 · 3 slots/)).toBeInTheDocument();
   });
+
+  it("renders an Override affordance when a table carries a forecast_override", () => {
+    const sample: ToolResponse = {
+      render: "table",
+      title: "Override forecast — all, 2026-06-14 14:00",
+      columns: ["Interval", "Current offered", "Proposed", "Δ"],
+      rows: [["2026-06-14 14:00", "270", "320", "+50"]],
+      apply_token: "tok-fc",
+      forecast_override: {
+        queue: "all",
+        interval_label: "2026-06-14 14:00",
+        current: 270,
+        proposed: 320,
+      },
+    };
+    render(<ToolResponseRenderer response={sample} />);
+    expect(
+      screen.getByRole("button", { name: /Override to 320/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Pins all 2026-06-14 14:00/)).toBeInTheDocument();
+  });
 });

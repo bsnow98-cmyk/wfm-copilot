@@ -17,6 +17,7 @@ from app.routers import (
     anomalies,
     chat,
     forecasts,
+    forecast_overrides,
     health,
     ingest,
     intraday,
@@ -73,6 +74,7 @@ app.include_router(schedules.router)
 app.include_router(schedule_changes.router)
 app.include_router(leave_decisions.router)
 app.include_router(offers.router)
+app.include_router(forecast_overrides.router)
 app.include_router(skills.router)
 app.include_router(anomalies.router)
 app.include_router(chat.router)
