@@ -26,12 +26,7 @@ from app.schemas.offer import (
     OfferLogEntry,
     OfferRetractResponse,
 )
-from app.services.apply_tokens import (
-    TokenExpired,
-    TokenNotFound,
-    consume_offer_token,
-    mark_offer_consumed,
-)
+from app.services.apply_tokens import consume_offer_token, mark_offer_consumed
 from app.services.notifications import notify_offer_published, notify_offer_retracted
 from app.services.offer import (
     AlreadyRetracted,
@@ -40,6 +35,7 @@ from app.services.offer import (
     publish_offer,
     retract_offer,
 )
+from app.services.write_actions import apply_via_token
 
 log = logging.getLogger("wfm.offers")
 router = APIRouter(prefix="/offers", tags=["offers"])
@@ -47,24 +43,11 @@ router = APIRouter(prefix="/offers", tags=["offers"])
 
 @router.post("/apply", response_model=OfferApplyResponse)
 def post_apply(req: OfferApplyRequest, db: Session = Depends(get_db)) -> OfferApplyResponse:
-    try:
-        token = consume_offer_token(db, req.apply_token)
-    except TokenNotFound:
-        raise HTTPException(404, "apply_token not found")
-    except TokenExpired:
-        raise HTTPException(410, "apply_token expired (5-minute TTL)")
-
-    # Idempotent re-apply: token already consumed → return the original offer.
-    if token.consumed_offer_id is not None:
+    def _idempotent(db: Session, offer_id: int) -> OfferApplyResponse:
         row = (
             db.execute(
-                text(
-                    """
-                    SELECT id, kind, slots, targets, published_at
-                    FROM offers WHERE id = :id
-                    """
-                ),
-                {"id": token.consumed_offer_id},
+                text("SELECT id, kind, slots, targets, published_at FROM offers WHERE id = :id"),
+                {"id": offer_id},
             )
             .mappings()
             .first()
@@ -79,22 +62,35 @@ def post_apply(req: OfferApplyRequest, db: Session = Depends(get_db)) -> OfferAp
             published_at=row["published_at"],
         )
 
-    result = publish_offer(db, spec=token.spec, conversation_id=token.conversation_id)
-    mark_offer_consumed(db, req.apply_token, result.offer_id)
-    notify_offer_published(
+    def _write(db: Session, token: Any):
+        result = publish_offer(db, spec=token.spec, conversation_id=token.conversation_id)
+        return result, result.offer_id
+
+    def _notify(db: Session, token: Any, result: Any) -> None:
+        notify_offer_published(
+            db,
+            summary=result.summary,
+            offer_id=result.offer_id,
+            kind=result.kind,
+            conversation_id=token.conversation_id,
+        )
+
+    return apply_via_token(
         db,
-        summary=result.summary,
-        offer_id=result.offer_id,
-        kind=result.kind,
-        conversation_id=token.conversation_id,
-    )
-    db.commit()
-    return OfferApplyResponse(
-        offer_id=result.offer_id,
-        kind=result.kind,  # type: ignore[arg-type]
-        slots=result.slots,
-        n_targets=result.n_targets,
-        published_at=result.published_at,
+        req.apply_token,
+        consume=consume_offer_token,
+        consumed_ref=lambda t: t.consumed_offer_id,
+        idempotent_result=_idempotent,
+        write=_write,
+        mark_consumed=mark_offer_consumed,
+        notify=_notify,
+        response=lambda r: OfferApplyResponse(
+            offer_id=r.offer_id,
+            kind=r.kind,  # type: ignore[arg-type]
+            slots=r.slots,
+            n_targets=r.n_targets,
+            published_at=r.published_at,
+        ),
     )
 
 

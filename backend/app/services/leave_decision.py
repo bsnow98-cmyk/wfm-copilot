@@ -33,12 +33,15 @@ SHIFT_HOURS = 8.0  # PTO charged per leave day
 class StaleVersionError(Exception):
     """request_version no longer matches the live request (decided out-of-band)."""
 
-    def __init__(self, your_version: int, current_version: int) -> None:
+    def __init__(
+        self, your_version: int, current_version: int, request_id: int | None = None
+    ) -> None:
         super().__init__(
             f"request_version mismatch (yours={your_version}, current={current_version})"
         )
         self.your_version = your_version
         self.current_version = current_version
+        self.request_id = request_id
 
 
 class RequestNotFound(Exception):
@@ -211,7 +214,7 @@ def apply_decision(
 
     current_version = compute_request_version(info.status, info.decided_at)
     if current_version != expected_version:
-        raise StaleVersionError(expected_version, current_version)
+        raise StaleVersionError(expected_version, current_version, request_id=request_id)
 
     before_state = {
         "status": info.status,
