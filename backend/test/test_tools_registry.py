@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "recommend_ot",
     "find_shift_coverage",
     "recommend_skill_rebalance",
+    "preview_offer",
     "get_occupancy",
     # Wave 3 — strict adherence
     "get_adherence",
@@ -46,6 +47,7 @@ EXPECTED_TOOLS = {
     "get_pto_balance",
     "get_leave_requests",
     "check_leave_feasibility",
+    "preview_leave_decision",
     "recommend_leave_approval",
     # Wave 4 — performance
     "get_agent_performance",

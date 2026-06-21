@@ -89,4 +89,53 @@ describe("ToolResponseRenderer", () => {
     expect(screen.getByText("Solver timed out")).toBeInTheDocument();
     expect(screen.getByText("SOLVER_TIMEOUT")).toBeInTheDocument();
   });
+
+  it("renders a plain table without a decision affordance", () => {
+    render(<ToolResponseRenderer response={SAMPLES.table} />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("renders an Approve affordance when a table carries a leave_decision", () => {
+    const sample: ToolResponse = {
+      render: "table",
+      title: "Approve PTO — Adams (EMP001)",
+      columns: ["Day", "Verdict"],
+      rows: [["2026-06-14", "OK"]],
+      apply_token: "tok-abc",
+      leave_decision: {
+        request_id: 3,
+        decision: "approve",
+        request_version: 123,
+        label: "Adams (EMP001)",
+        pto_hours: 40,
+      },
+    };
+    render(<ToolResponseRenderer response={sample} />);
+    expect(
+      screen.getByRole("button", { name: /Approve Adams \(EMP001\)/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Charges 40h PTO/)).toBeInTheDocument();
+  });
+
+  it("renders a Publish affordance when a table carries an offer", () => {
+    const sample: ToolResponse = {
+      render: "table",
+      title: "Publish OT offer — 2026-06-09",
+      columns: ["rank", "agent"],
+      rows: [[1, "Agent 001"]],
+      apply_token: "tok-offer",
+      offer: {
+        kind: "ot",
+        slots: 3,
+        n_targets: 9,
+        window_label: "09:00–12:00",
+        target_date: "2026-06-09",
+      },
+    };
+    render(<ToolResponseRenderer response={sample} />);
+    expect(
+      screen.getByRole("button", { name: /Publish OT offer to 9 agents/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/09:00–12:00 · 3 slots/)).toBeInTheDocument();
+  });
 });

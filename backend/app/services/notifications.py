@@ -129,6 +129,102 @@ def notify_schedule_undone(
     )
 
 
+def notify_leave_decided(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    request_id: int,
+    decision: str,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="leave_decided",
+            source="chat_apply",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "request_id": request_id,
+                "decision": decision,
+            },
+        ),
+    )
+
+
+def notify_leave_decision_undone(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    request_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="leave_decision_undone",
+            source="chat_undo",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "request_id": request_id,
+            },
+        ),
+    )
+
+
+def notify_offer_published(
+    db: Session,
+    *,
+    summary: str,
+    offer_id: int,
+    kind: str,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="offer_published",
+            source="chat_apply",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "offer_id": offer_id,
+                "kind": kind,
+            },
+        ),
+    )
+
+
+def notify_offer_retracted(
+    db: Session,
+    *,
+    summary: str,
+    offer_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="offer_retracted",
+            source="chat_undo",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "offer_id": offer_id,
+            },
+        ),
+    )
+
+
 # --------------------------------------------------------------------------
 # Read-side
 # --------------------------------------------------------------------------

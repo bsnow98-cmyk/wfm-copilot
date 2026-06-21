@@ -1,4 +1,9 @@
-import type { ToolResponse } from "../types";
+"use client";
+
+import { useState } from "react";
+import type { LeaveDecisionPreview, OfferPreview, ToolResponse } from "../types";
+import { applyLeaveDecision, LeaveApplyError } from "@/lib/leaveDecision";
+import { publishOffer, OfferApplyError } from "@/lib/offerApply";
 
 export function TableRenderer({
   response,
@@ -46,6 +51,164 @@ export function TableRenderer({
           </tbody>
         </table>
       </div>
+      {response.apply_token && response.leave_decision ? (
+        <LeaveDecisionAffordance
+          applyToken={response.apply_token}
+          decision={response.leave_decision}
+        />
+      ) : null}
+      {response.apply_token && response.offer ? (
+        <OfferAffordance applyToken={response.apply_token} offer={response.offer} />
+      ) : null}
     </figure>
+  );
+}
+
+function OfferAffordance({
+  applyToken,
+  offer,
+}: {
+  applyToken: string;
+  offer: OfferPreview;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "publishing" }
+    | { kind: "published"; offerId: number; publishedAt: string }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  const label = offer.kind.toUpperCase();
+
+  async function handlePublish() {
+    setState({ kind: "publishing" });
+    try {
+      const out = await publishOffer({ apply_token: applyToken });
+      setState({ kind: "published", offerId: out.offer_id, publishedAt: out.published_at });
+    } catch (err) {
+      const message =
+        err instanceof OfferApplyError || err instanceof Error
+          ? err.message
+          : "Publish failed for an unknown reason.";
+      setState({ kind: "error", message });
+    }
+  }
+
+  if (state.kind === "published") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-text-muted">
+        {label} offer published{" "}
+        <span data-mono>#{state.offerId}</span> at{" "}
+        <span data-mono>{state.publishedAt.slice(11, 16)}</span>. Retractable for 24 hours.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 border-t border-border-default flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handlePublish}
+        disabled={state.kind === "publishing"}
+        className="text-sm px-3 py-1.5 rounded-sm bg-accent text-white disabled:bg-border-strong"
+        title={`Publish this ${label} offer to ${offer.n_targets} agents`}
+      >
+        {state.kind === "publishing"
+          ? "Publishing…"
+          : `Publish ${label} offer to ${offer.n_targets} agent${offer.n_targets === 1 ? "" : "s"}`}
+      </button>
+      {state.kind === "error" ? (
+        <span className="text-xs text-severity-high">{state.message}</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          {offer.window_label} · {offer.slots} slot{offer.slots === 1 ? "" : "s"}. Retractable for 24
+          hours.
+        </span>
+      )}
+    </div>
+  );
+}
+
+function LeaveDecisionAffordance({
+  applyToken,
+  decision,
+}: {
+  applyToken: string;
+  decision: LeaveDecisionPreview;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "applying" }
+    | { kind: "applied"; status: string; decidedAt: string }
+    | { kind: "conflict"; status?: string | null }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  const isApprove = decision.decision === "approve";
+  const verb = isApprove ? "Approve" : "Deny";
+
+  async function handleApply() {
+    setState({ kind: "applying" });
+    try {
+      const out = await applyLeaveDecision({ apply_token: applyToken });
+      setState({ kind: "applied", status: out.status, decidedAt: out.decided_at });
+    } catch (err) {
+      if (err instanceof LeaveApplyError && err.kind === "conflict") {
+        setState({ kind: "conflict", status: err.currentStatus });
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : "Apply failed for an unknown reason.";
+      setState({ kind: "error", message });
+    }
+  }
+
+  if (state.kind === "applied") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-text-muted">
+        {state.status === "approved" ? "Approved" : "Denied"}{" "}
+        <span data-mono>{state.decidedAt.slice(11, 16)}</span>. Undoable for 24 hours.
+      </div>
+    );
+  }
+
+  if (state.kind === "conflict") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-severity-medium">
+        This request was already decided
+        {state.status ? ` (now ${state.status})` : ""} since the preview. Re-run the
+        recommendation to see the current state.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 border-t border-border-default flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handleApply}
+        disabled={state.kind === "applying"}
+        className={
+          isApprove
+            ? "text-sm px-3 py-1.5 rounded-sm bg-accent text-white disabled:bg-border-strong"
+            : "text-sm px-3 py-1.5 rounded-sm border border-border-strong text-text-primary disabled:text-text-muted"
+        }
+        title={`${verb} leave for ${decision.label}`}
+      >
+        {state.kind === "applying"
+          ? `${verb}ing…`
+          : `${verb} ${decision.label}`}
+      </button>
+      {state.kind === "error" ? (
+        <span className="text-xs text-severity-high">{state.message}</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          {isApprove && decision.pto_hours
+            ? `Charges ${decision.pto_hours}h PTO. `
+            : ""}
+          A decision will be saved and undoable for 24 hours.
+        </span>
+      )}
+    </div>
   );
 }
