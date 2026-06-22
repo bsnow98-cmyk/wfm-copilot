@@ -27,12 +27,7 @@ from app.schemas.leave_decision import (
     LeaveDecisionLogEntry,
     LeaveUndoResponse,
 )
-from app.services.apply_tokens import (
-    TokenExpired,
-    TokenNotFound,
-    consume_leave_token,
-    mark_leave_consumed,
-)
+from app.services.apply_tokens import consume_leave_token, mark_leave_consumed
 from app.services.leave_decision import (
     AlreadyUndone,
     ChangeNotFound,
@@ -40,7 +35,6 @@ from app.services.leave_decision import (
     StaleVersionError,
     UndoWindowExpired,
     apply_decision,
-    compute_request_version,
     load_request,
     undo_decision,
 )
@@ -48,6 +42,7 @@ from app.services.notifications import (
     notify_leave_decided,
     notify_leave_decision_undone,
 )
+from app.services.write_actions import apply_via_token
 
 log = logging.getLogger("wfm.leave_decisions")
 router = APIRouter(prefix="/leave/decisions", tags=["leave_decisions"])
@@ -55,15 +50,7 @@ router = APIRouter(prefix="/leave/decisions", tags=["leave_decisions"])
 
 @router.post("/apply", response_model=LeaveApplyResponse)
 def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveApplyResponse:
-    try:
-        token = consume_leave_token(db, req.apply_token)
-    except TokenNotFound:
-        raise HTTPException(404, "apply_token not found")
-    except TokenExpired:
-        raise HTTPException(410, "apply_token expired (5-minute TTL)")
-
-    # Idempotent re-apply: token already consumed → return the original result.
-    if token.consumed_log_id is not None:
+    def _idempotent(db: Session, log_id: str) -> LeaveApplyResponse:
         row = (
             db.execute(
                 text(
@@ -72,7 +59,7 @@ def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveAp
                     FROM leave_decision_log WHERE id = CAST(:id AS uuid)
                     """
                 ),
-                {"id": token.consumed_log_id},
+                {"id": log_id},
             )
             .mappings()
             .first()
@@ -86,7 +73,7 @@ def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveAp
             decided_at=row["applied_at"],
         )
 
-    try:
+    def _write(db: Session, token: Any):
         result = apply_decision(
             db,
             request_id=token.request_id,
@@ -95,16 +82,48 @@ def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveAp
             note=token.note,
             conversation_id=token.conversation_id,
         )
+        return result, result.log_id
+
+    def _notify(db: Session, token: Any, result: Any) -> None:
+        notify_leave_decided(
+            db,
+            summary=result.summary,
+            log_id=result.log_id,
+            request_id=result.request_id,
+            decision=token.decision,
+            conversation_id=token.conversation_id,
+        )
+
+    # Domain concurrency errors raised inside _write propagate here for the
+    # surface-specific 409 (the version check runs before any mutation, so the
+    # session is clean for the fresh-preview read).
+    try:
+        return apply_via_token(
+            db,
+            req.apply_token,
+            consume=consume_leave_token,
+            consumed_ref=lambda t: t.consumed_log_id,
+            idempotent_result=_idempotent,
+            write=_write,
+            mark_consumed=mark_leave_consumed,
+            notify=_notify,
+            response=lambda r: LeaveApplyResponse(
+                log_id=r.log_id,
+                request_id=r.request_id,
+                status=r.status,  # type: ignore[arg-type]
+                decided_at=r.decided_at,
+            ),
+        )
     except RequestNotFound:
         raise HTTPException(404, "leave request not found")
     except StaleVersionError as exc:
         # 409 with both versions + a fresh feasibility preview, mirroring D-4.
-        info = load_request(db, token.request_id)
+        info = load_request(db, exc.request_id) if exc.request_id is not None else None
         fresh: dict[str, Any] | None = None
         if info is not None:
             from app.tools.check_leave_feasibility import handler as feasibility_handler
 
-            fresh = feasibility_handler({"request_id": token.request_id}, db)
+            fresh = feasibility_handler({"request_id": info.request_id}, db)
         raise HTTPException(
             status_code=409,
             detail={
@@ -114,25 +133,6 @@ def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveAp
                 "fresh_preview": fresh,
             },
         )
-
-    mark_leave_consumed(db, req.apply_token, result.log_id)
-
-    notify_leave_decided(
-        db,
-        summary=result.summary,
-        log_id=result.log_id,
-        request_id=result.request_id,
-        decision=token.decision,
-        conversation_id=token.conversation_id,
-    )
-
-    db.commit()
-    return LeaveApplyResponse(
-        log_id=result.log_id,
-        request_id=result.request_id,
-        status=result.status,  # type: ignore[arg-type]
-        decided_at=result.decided_at,
-    )
 
 
 @router.get("", response_model=list[LeaveDecisionLogEntry])
