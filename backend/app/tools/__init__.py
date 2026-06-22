@@ -37,6 +37,7 @@ from app.tools import (
     get_intraday_gaps,
     get_occupancy,
     get_top_risks,
+    preview_forecast_override,
     recommend_ot,
     preview_offer,
     preview_staffing_target,
@@ -51,6 +52,7 @@ from app.tools import (
     get_agents_on_aux,
     get_realtime_alerts,
     get_realtime_status,
+    preview_break_move,
     recommend_break_shift,
     # Wave 3 — PTO/leave
     check_leave_feasibility,
@@ -98,6 +100,7 @@ _MODULES = [
     find_shift_coverage,
     recommend_skill_rebalance,
     preview_offer,
+    preview_forecast_override,
     preview_staffing_target,
     get_occupancy,
     # Wave 3 — adherence
@@ -110,6 +113,7 @@ _MODULES = [
     get_agents_on_aux,
     get_realtime_alerts,
     recommend_break_shift,
+    preview_break_move,
     # Wave 3 — PTO/leave
     get_pto_balance,
     get_leave_requests,

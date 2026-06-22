@@ -32,6 +32,7 @@ EXPECTED_TOOLS = {
     "find_shift_coverage",
     "recommend_skill_rebalance",
     "preview_offer",
+    "preview_forecast_override",
     "preview_staffing_target",
     "get_occupancy",
     # Wave 3 — strict adherence
@@ -44,6 +45,7 @@ EXPECTED_TOOLS = {
     "get_agents_on_aux",
     "get_realtime_alerts",
     "recommend_break_shift",
+    "preview_break_move",
     # Wave 3 — PTO/leave
     "get_pto_balance",
     "get_leave_requests",

@@ -44,6 +44,13 @@ export type OfferPreview = {
   message?: string | null;
 };
 
+export type ForecastOverridePreview = {
+  queue: string;
+  interval_label: string;
+  current: number;
+  proposed: number;
+};
+
 export type StaffingTargetPreview = {
   queue: string;
   peak_before: number;
@@ -77,6 +84,7 @@ export type ToolResponse =
       apply_token?: string;
       leave_decision?: LeaveDecisionPreview; // preview_leave_decision (#1)
       offer?: OfferPreview; // preview_offer (#2)
+      forecast_override?: ForecastOverridePreview; // preview_forecast_override (#4)
       staffing_target?: StaffingTargetPreview; // preview_staffing_target (#5)
     }
   | {
