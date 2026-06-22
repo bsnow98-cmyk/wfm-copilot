@@ -17,6 +17,7 @@ from app.routers import (
     anomalies,
     chat,
     forecasts,
+    forecast_overrides,
     health,
     ingest,
     intraday,
@@ -25,10 +26,10 @@ from app.routers import (
     offers,
     schedule_changes,
     schedules,
-    staffing_targets,
-    users,
     skills,
     staffing,
+    staffing_targets,
+    users,
 )
 
 settings = get_settings()
@@ -75,6 +76,7 @@ app.include_router(schedules.router)
 app.include_router(schedule_changes.router)
 app.include_router(leave_decisions.router)
 app.include_router(offers.router)
+app.include_router(forecast_overrides.router)
 app.include_router(staffing_targets.router)
 app.include_router(skills.router)
 app.include_router(anomalies.router)

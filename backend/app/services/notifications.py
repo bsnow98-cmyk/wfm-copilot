@@ -225,6 +225,54 @@ def notify_offer_retracted(
     )
 
 
+def notify_forecast_override_applied(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    forecast_run_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="forecast_override_applied",
+            source="chat_apply",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "forecast_run_id": forecast_run_id,
+            },
+        ),
+    )
+
+
+def notify_forecast_override_undone(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    forecast_run_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="forecast_override_undone",
+            source="chat_undo",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "forecast_run_id": forecast_run_id,
+            },
+        ),
+    )
+
+
 def notify_staffing_recomputed(
     db: Session,
     *,
