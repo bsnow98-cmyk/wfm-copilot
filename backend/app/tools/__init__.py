@@ -51,6 +51,7 @@ from app.tools import (
     get_agents_on_aux,
     get_realtime_alerts,
     get_realtime_status,
+    preview_break_move,
     recommend_break_shift,
     # Wave 3 — PTO/leave
     check_leave_feasibility,
@@ -110,6 +111,7 @@ _MODULES = [
     get_agents_on_aux,
     get_realtime_alerts,
     recommend_break_shift,
+    preview_break_move,
     # Wave 3 — PTO/leave
     get_pto_balance,
     get_leave_requests,
