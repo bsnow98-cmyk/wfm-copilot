@@ -25,6 +25,7 @@ from app.tools import (
     get_forecast,
     get_schedule,
     get_staffing,
+    preview_create_shift,
     preview_schedule_change,
     # Phase 8
     explain_substitution,
@@ -84,6 +85,7 @@ _MODULES = [
     get_anomalies,
     compare_scenarios,
     preview_schedule_change,
+    preview_create_shift,
     # Phase 8
     get_skills_coverage,
     explain_substitution,

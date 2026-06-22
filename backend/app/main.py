@@ -26,6 +26,7 @@ from app.routers import (
     schedule_changes,
     schedules,
     staffing_targets,
+    users,
     skills,
     staffing,
 )
@@ -80,6 +81,7 @@ app.include_router(anomalies.router)
 app.include_router(chat.router)
 app.include_router(intraday.router)
 app.include_router(notifications.router)
+app.include_router(users.router)
 
 
 @app.on_event("startup")

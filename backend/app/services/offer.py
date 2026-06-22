@@ -69,6 +69,7 @@ def publish_offer(
     *,
     spec: dict[str, Any],
     conversation_id: str | None,
+    actor: str = "demo",
 ) -> OfferResult:
     """Insert one offers row (status='open') from a previewed spec, inside the
     caller's transaction. The router commits."""
@@ -85,11 +86,12 @@ def publish_offer(
                 VALUES
                     (:kind, :sched, :tdate, :wstart, :wend,
                      CAST(:targets AS jsonb), :slots, :policy, :message, 'open',
-                     :at, 'demo', CAST(:conv AS uuid), :undo_until)
+                     :at, :actor, CAST(:conv AS uuid), :undo_until)
                 RETURNING id
                 """
             ),
             {
+                "actor": actor,
                 "kind": spec["kind"],
                 "sched": spec.get("schedule_id"),
                 "tdate": spec["target_date"],

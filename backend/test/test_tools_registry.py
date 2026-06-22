@@ -18,6 +18,7 @@ EXPECTED_TOOLS = {
     "get_anomalies",
     "compare_scenarios",
     "preview_schedule_change",
+    "preview_create_shift",  # Surface #6
     "get_skills_coverage",   # Phase 8 stage 2
     "explain_substitution",  # Phase 8 stage 3
     # Wave 1 — leadership/ops asks expansion

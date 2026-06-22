@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.identity import User, require_role
 from app.schemas.offer import (
     OfferApplyRequest,
     OfferApplyResponse,
@@ -42,7 +43,11 @@ router = APIRouter(prefix="/offers", tags=["offers"])
 
 
 @router.post("/apply", response_model=OfferApplyResponse)
-def post_apply(req: OfferApplyRequest, db: Session = Depends(get_db)) -> OfferApplyResponse:
+def post_apply(
+    req: OfferApplyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("wfm_manager")),
+) -> OfferApplyResponse:
     def _idempotent(db: Session, offer_id: int) -> OfferApplyResponse:
         row = (
             db.execute(
@@ -63,7 +68,9 @@ def post_apply(req: OfferApplyRequest, db: Session = Depends(get_db)) -> OfferAp
         )
 
     def _write(db: Session, token: Any):
-        result = publish_offer(db, spec=token.spec, conversation_id=token.conversation_id)
+        result = publish_offer(
+            db, spec=token.spec, conversation_id=token.conversation_id, actor=user.username
+        )
         return result, result.offer_id
 
     def _notify(db: Session, token: Any, result: Any) -> None:
@@ -149,7 +156,11 @@ def list_offers(
 
 
 @router.post("/{offer_id}/retract", response_model=OfferRetractResponse)
-def post_retract(offer_id: int, db: Session = Depends(get_db)) -> OfferRetractResponse:
+def post_retract(
+    offer_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("wfm_manager")),
+) -> OfferRetractResponse:
     try:
         result = retract_offer(db, offer_id)
     except OfferNotFound:

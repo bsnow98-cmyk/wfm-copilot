@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.identity import User, require_role
 from app.schemas.leave_decision import (
     LeaveApplyRequest,
     LeaveApplyResponse,
@@ -49,7 +50,11 @@ router = APIRouter(prefix="/leave/decisions", tags=["leave_decisions"])
 
 
 @router.post("/apply", response_model=LeaveApplyResponse)
-def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveApplyResponse:
+def post_apply(
+    req: LeaveApplyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
+) -> LeaveApplyResponse:
     def _idempotent(db: Session, log_id: str) -> LeaveApplyResponse:
         row = (
             db.execute(
@@ -81,6 +86,7 @@ def post_apply(req: LeaveApplyRequest, db: Session = Depends(get_db)) -> LeaveAp
             decision=token.decision,
             note=token.note,
             conversation_id=token.conversation_id,
+            actor=user.username,
         )
         return result, result.log_id
 
@@ -186,7 +192,11 @@ def list_decisions(
 
 
 @router.post("/{log_id}/undo", response_model=LeaveUndoResponse)
-def post_undo(log_id: str, db: Session = Depends(get_db)) -> LeaveUndoResponse:
+def post_undo(
+    log_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
+) -> LeaveUndoResponse:
     try:
         result = undo_decision(db, log_id)
     except ChangeNotFound:

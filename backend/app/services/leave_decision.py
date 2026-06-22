@@ -200,6 +200,7 @@ def apply_decision(
     decision: str,
     note: str | None,
     conversation_id: str | None,
+    actor: str = "demo",
 ) -> DecisionResult:
     """Flip a pending leave request to approved/denied inside the caller's txn.
 
@@ -230,11 +231,11 @@ def apply_decision(
             """
             UPDATE leave_requests
             SET status = :status, decided_at = :at,
-                decided_by = 'demo', decision_note = :note
+                decided_by = :actor, decision_note = :note
             WHERE id = :id
             """
         ),
-        {"status": new_status, "at": decided_at, "note": note, "id": request_id},
+        {"status": new_status, "at": decided_at, "note": note, "id": request_id, "actor": actor},
     )
 
     ledger_event_id: int | None = None
@@ -278,7 +279,7 @@ def apply_decision(
     after_state = {
         "status": new_status,
         "decided_at": decided_at.isoformat(),
-        "decided_by": "demo",
+        "decided_by": actor,
         "decision_note": note,
     }
 
@@ -295,13 +296,14 @@ def apply_decision(
                 (applied_at, applied_by, conversation_id, request_id, decision,
                  before_state, after_state, ledger_event_id, undo_window_ends_at)
             VALUES
-                (:at, 'demo', CAST(:conv AS uuid), :rid, :decision,
+                (:at, :actor, CAST(:conv AS uuid), :rid, :decision,
                  CAST(:before AS jsonb), CAST(:after AS jsonb), :ledger, :undo_until)
             RETURNING id
             """
         ),
         {
             "at": applied_at,
+            "actor": actor,
             "conv": conversation_id,
             "rid": request_id,
             "decision": decision,

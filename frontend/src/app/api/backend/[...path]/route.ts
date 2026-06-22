@@ -42,9 +42,15 @@ async function proxy(req: NextRequest, ctx: Ctx): Promise<Response> {
     if (v) headers.set(name, v);
   }
   if (DEMO_PASSWORD) {
+    // The shared password is the secret (server-side only). The *username* is
+    // the RBAC identity, chosen client-side via the `wfm_user` cookie (set by
+    // the header identity picker). Defaults to 'demo' (admin) for back-compat.
+    const username = req.cookies.get("wfm_user")?.value || "demo";
+    // Keep it to a safe token — the backend resolves it against the users table.
+    const safeUser = /^[a-z0-9_]{1,32}$/i.test(username) ? username : "demo";
     headers.set(
       "authorization",
-      "Basic " + Buffer.from(`demo:${DEMO_PASSWORD}`).toString("base64"),
+      "Basic " + Buffer.from(`${safeUser}:${DEMO_PASSWORD}`).toString("base64"),
     );
   }
 
