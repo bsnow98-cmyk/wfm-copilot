@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { LeaveDecisionPreview, OfferPreview, ToolResponse } from "../types";
+import type {
+  ForecastOverridePreview,
+  LeaveDecisionPreview,
+  OfferPreview,
+  ToolResponse,
+} from "../types";
 import { applyLeaveDecision, LeaveApplyError } from "@/lib/leaveDecision";
 import { publishOffer, OfferApplyError } from "@/lib/offerApply";
+import { applyForecastOverride, ForecastOverrideError } from "@/lib/forecastOverride";
 
 export function TableRenderer({
   response,
@@ -60,7 +66,87 @@ export function TableRenderer({
       {response.apply_token && response.offer ? (
         <OfferAffordance applyToken={response.apply_token} offer={response.offer} />
       ) : null}
+      {response.apply_token && response.forecast_override ? (
+        <ForecastOverrideAffordance
+          applyToken={response.apply_token}
+          override={response.forecast_override}
+        />
+      ) : null}
     </figure>
+  );
+}
+
+function ForecastOverrideAffordance({
+  applyToken,
+  override,
+}: {
+  applyToken: string;
+  override: ForecastOverridePreview;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "applying" }
+    | { kind: "applied"; appliedAt: string }
+    | { kind: "conflict"; current?: number | null }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  async function handleApply() {
+    setState({ kind: "applying" });
+    try {
+      const out = await applyForecastOverride({ apply_token: applyToken });
+      setState({ kind: "applied", appliedAt: out.applied_at });
+    } catch (err) {
+      if (err instanceof ForecastOverrideError && err.kind === "conflict") {
+        setState({ kind: "conflict", current: err.currentValue });
+        return;
+      }
+      const message =
+        err instanceof Error ? err.message : "Apply failed for an unknown reason.";
+      setState({ kind: "error", message });
+    }
+  }
+
+  if (state.kind === "applied") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-text-muted">
+        Override applied <span data-mono>{state.appliedAt.slice(11, 16)}</span>. Undoable for 24
+        hours. Recompute staffing to propagate.
+      </div>
+    );
+  }
+
+  if (state.kind === "conflict") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-severity-medium">
+        The forecast value changed since this preview
+        {state.current != null ? ` (now ${state.current})` : ""}. Re-preview before applying.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 border-t border-border-default flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handleApply}
+        disabled={state.kind === "applying"}
+        className="text-sm px-3 py-1.5 rounded-sm bg-accent text-white disabled:bg-border-strong"
+        title={`Pin ${override.interval_label} to ${override.proposed}`}
+      >
+        {state.kind === "applying"
+          ? "Applying…"
+          : `Override to ${Math.round(override.proposed)}`}
+      </button>
+      {state.kind === "error" ? (
+        <span className="text-xs text-severity-high">{state.message}</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          Pins {override.queue} {override.interval_label}. Undoable for 24 hours; staffing
+          recompute is separate.
+        </span>
+      )}
+    </div>
   );
 }
 
