@@ -118,6 +118,7 @@ def apply_override(
     new_value: float,
     expected_version: int,
     conversation_id: str | None,
+    actor: str = "demo",
 ) -> OverrideResult:
     """Pin one forecast interval to new_value inside the caller's txn. Raises
     IntervalNotFound (→404) / StaleVersionError (→409). The router commits."""
@@ -154,12 +155,13 @@ def apply_override(
                 (applied_at, applied_by, conversation_id, forecast_run_id,
                  interval_start, before_value, after_value, undo_window_ends_at)
             VALUES
-                (:at, 'demo', CAST(:conv AS uuid), :rid, :ts, :before, :after, :undo_until)
+                (:at, :actor, CAST(:conv AS uuid), :rid, :ts, :before, :after, :undo_until)
             RETURNING id
             """
         ),
         {
             "at": applied_at,
+            "actor": actor,
             "conv": conversation_id,
             "rid": forecast_run_id,
             "ts": interval_start,
