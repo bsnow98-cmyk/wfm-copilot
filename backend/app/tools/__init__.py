@@ -39,6 +39,7 @@ from app.tools import (
     get_top_risks,
     recommend_ot,
     preview_offer,
+    preview_staffing_target,
     recommend_skill_rebalance,
     recommend_vto,
     # Wave 3 — adherence
@@ -97,6 +98,7 @@ _MODULES = [
     find_shift_coverage,
     recommend_skill_rebalance,
     preview_offer,
+    preview_staffing_target,
     get_occupancy,
     # Wave 3 — adherence
     get_adherence,

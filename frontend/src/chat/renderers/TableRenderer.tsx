@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { LeaveDecisionPreview, OfferPreview, ToolResponse } from "../types";
+import type {
+  LeaveDecisionPreview,
+  OfferPreview,
+  StaffingTargetPreview,
+  ToolResponse,
+} from "../types";
 import { applyLeaveDecision, LeaveApplyError } from "@/lib/leaveDecision";
 import { publishOffer, OfferApplyError } from "@/lib/offerApply";
+import { applyStaffingTarget, pollStaffingStatus } from "@/lib/staffingTarget";
 
 export function TableRenderer({
   response,
@@ -60,7 +66,82 @@ export function TableRenderer({
       {response.apply_token && response.offer ? (
         <OfferAffordance applyToken={response.apply_token} offer={response.offer} />
       ) : null}
+      {response.apply_token && response.staffing_target ? (
+        <StaffingTargetAffordance
+          applyToken={response.apply_token}
+          target={response.staffing_target}
+        />
+      ) : null}
     </figure>
+  );
+}
+
+function StaffingTargetAffordance({
+  applyToken,
+  target,
+}: {
+  applyToken: string;
+  target: StaffingTargetPreview;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "applying" }
+    | { kind: "recomputing" }
+    | { kind: "done"; peakAfter: number | null }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  async function handleApply() {
+    setState({ kind: "applying" });
+    try {
+      const out = await applyStaffingTarget(applyToken);
+      setState({ kind: "recomputing" });
+      const final = await pollStaffingStatus(out.log_id);
+      if (final.recompute_status === "failed") {
+        setState({ kind: "error", message: final.recompute_error || "Recompute failed." });
+        return;
+      }
+      setState({ kind: "done", peakAfter: final.peak_required_after ?? null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Apply failed for an unknown reason.";
+      setState({ kind: "error", message });
+    }
+  }
+
+  if (state.kind === "done") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-text-muted">
+        Targets applied & staffing recomputed — peak required{" "}
+        <span data-mono>{target.peak_before}</span> →{" "}
+        <span data-mono>{state.peakAfter ?? target.peak_after_est}</span>. Undoable for 24 hours.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 border-t border-border-default flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handleApply}
+        disabled={state.kind === "applying" || state.kind === "recomputing"}
+        className="text-sm px-3 py-1.5 rounded-sm bg-accent text-white disabled:bg-border-strong"
+        title={`Apply new targets for ${target.queue} and recompute staffing`}
+      >
+        {state.kind === "applying"
+          ? "Applying…"
+          : state.kind === "recomputing"
+            ? "Recomputing staffing…"
+            : "Apply targets & recompute"}
+      </button>
+      {state.kind === "error" ? (
+        <span className="text-xs text-severity-high">{state.message}</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          Recompute runs as a background job. Peak required ~{target.peak_before} →{" "}
+          {target.peak_after_est}. Undoable for 24 hours.
+        </span>
+      )}
+    </div>
   );
 }
 

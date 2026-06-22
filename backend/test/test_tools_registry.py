@@ -32,6 +32,7 @@ EXPECTED_TOOLS = {
     "find_shift_coverage",
     "recommend_skill_rebalance",
     "preview_offer",
+    "preview_staffing_target",
     "get_occupancy",
     # Wave 3 — strict adherence
     "get_adherence",

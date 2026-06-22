@@ -25,6 +25,7 @@ from app.routers import (
     offers,
     schedule_changes,
     schedules,
+    staffing_targets,
     skills,
     staffing,
 )
@@ -73,6 +74,7 @@ app.include_router(schedules.router)
 app.include_router(schedule_changes.router)
 app.include_router(leave_decisions.router)
 app.include_router(offers.router)
+app.include_router(staffing_targets.router)
 app.include_router(skills.router)
 app.include_router(anomalies.router)
 app.include_router(chat.router)

@@ -354,6 +354,110 @@ def mark_offer_consumed(db: Session, token: str, offer_id: int) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Staffing-target tokens (Surface #5).
+#
+# target_kind='staffing_target'; change_set pins {staffing_id, new_targets,
+# expected_version}. Consumption tracked by consumed_staffing_log_id.
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ConsumedStaffingToken:
+    staffing_id: int
+    new_targets: dict[str, Any]
+    expected_version: int
+    conversation_id: str | None
+    user_msg_id: str | None
+    consumed_log_id: str | None  # set if already consumed (idempotent path)
+
+
+def issue_staffing_token(
+    db: Session,
+    *,
+    staffing_id: int,
+    new_targets: dict[str, Any],
+    expected_version: int,
+    conversation_id: str | None = None,
+    user_msg_id: str | None = None,
+) -> IssuedToken:
+    """Mint a single-use token authorizing one staffing-target change."""
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + TOKEN_TTL
+    change_set = {
+        "staffing_id": staffing_id,
+        "new_targets": new_targets,
+        "expected_version": expected_version,
+    }
+    db.execute(
+        text(
+            """
+            INSERT INTO chat_apply_tokens
+                (token, expires_at, target_kind, change_set,
+                 conversation_id, user_msg_id)
+            VALUES
+                (:token, :expires, 'staffing_target', CAST(:cs AS jsonb),
+                 CAST(:conv AS uuid), CAST(:umid AS uuid))
+            """
+        ),
+        {
+            "token": token,
+            "expires": expires_at,
+            "cs": _json_dumps(change_set),
+            "conv": conversation_id,
+            "umid": user_msg_id,
+        },
+    )
+    return IssuedToken(token=token, schedule_version=expected_version, expires_at=expires_at)
+
+
+def consume_staffing_token(db: Session, token: str) -> ConsumedStaffingToken:
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT change_set, expires_at, consumed_at, consumed_staffing_log_id,
+                       conversation_id, user_msg_id, target_kind
+                FROM chat_apply_tokens
+                WHERE token = :token
+                FOR UPDATE
+                """
+            ),
+            {"token": token},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise TokenNotFound("Unknown apply_token")
+    if row["target_kind"] != "staffing_target":
+        raise TokenNotFound("apply_token is not a staffing-target token")
+    if row["consumed_at"] is None and row["expires_at"] < datetime.now(timezone.utc):
+        raise TokenExpired("apply_token expired (5-minute TTL)")
+    cs = row["change_set"] or {}
+    return ConsumedStaffingToken(
+        staffing_id=int(cs["staffing_id"]),
+        new_targets=cs["new_targets"],
+        expected_version=int(cs["expected_version"]),
+        conversation_id=str(row["conversation_id"]) if row["conversation_id"] else None,
+        user_msg_id=str(row["user_msg_id"]) if row["user_msg_id"] else None,
+        consumed_log_id=(
+            str(row["consumed_staffing_log_id"]) if row["consumed_staffing_log_id"] else None
+        ),
+    )
+
+
+def mark_staffing_consumed(db: Session, token: str, log_id: str) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE chat_apply_tokens
+            SET consumed_at = NOW(), consumed_staffing_log_id = CAST(:log_id AS uuid)
+            WHERE token = :token
+            """
+        ),
+        {"token": token, "log_id": log_id},
+    )
+
+
 def _json_dumps(value: Any) -> str:
     import json
     return json.dumps(value, default=str)

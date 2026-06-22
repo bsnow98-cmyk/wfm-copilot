@@ -58,9 +58,31 @@ def sweep_orphaned_jobs(db: Session) -> dict[str, int]:
         {"msg": _INTERRUPTED_MSG, "stale": STALE_AFTER_MINUTES},
     ).fetchall()
 
+    # Surface #5 — staffing-target recomputes run as BackgroundTasks too, so a
+    # process death can strand a row at pending/running. Mark stale ones failed
+    # (the targets/intervals were left untouched until the job completes, so the
+    # scenario is still consistent — re-apply to retry).
+    staffing = db.execute(
+        text("""
+            UPDATE staffing_target_change_log
+            SET recompute_status = 'failed',
+                recompute_error  = :msg,
+                completed_at     = NOW()
+            WHERE recompute_status IN ('pending', 'running')
+              AND COALESCE(started_at, applied_at)
+                  < NOW() - make_interval(mins => :stale)
+            RETURNING id
+        """),
+        {"msg": _INTERRUPTED_MSG, "stale": STALE_AFTER_MINUTES},
+    ).fetchall()
+
     db.commit()
 
-    counts = {"schedules": len(schedules), "forecast_runs": len(forecasts)}
+    counts = {
+        "schedules": len(schedules),
+        "forecast_runs": len(forecasts),
+        "staffing_recomputes": len(staffing),
+    }
     if schedules:
         log.warning(
             "Swept %d orphaned schedule(s): %s",
@@ -70,5 +92,10 @@ def sweep_orphaned_jobs(db: Session) -> dict[str, int]:
         log.warning(
             "Swept %d orphaned forecast run(s): %s",
             len(forecasts), [r[0] for r in forecasts],
+        )
+    if staffing:
+        log.warning(
+            "Swept %d orphaned staffing recompute(s): %s",
+            len(staffing), [str(r[0]) for r in staffing],
         )
     return counts

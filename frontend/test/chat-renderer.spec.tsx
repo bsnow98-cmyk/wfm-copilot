@@ -138,4 +138,20 @@ describe("ToolResponseRenderer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/09:00–12:00 · 3 slots/)).toBeInTheDocument();
   });
+
+  it("renders a staffing-target affordance when a table carries staffing_target", () => {
+    const sample: ToolResponse = {
+      render: "table",
+      title: "Change staffing target — all",
+      columns: ["Metric", "Current", "Proposed"],
+      rows: [["Service level", "80%", "85%"]],
+      apply_token: "tok-st",
+      staffing_target: { queue: "all", peak_before: 38, peak_after_est: 39 },
+    };
+    render(<ToolResponseRenderer response={sample} />);
+    expect(
+      screen.getByRole("button", { name: /Apply targets & recompute/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/background job/)).toBeInTheDocument();
+  });
 });
