@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.identity import User, require_role
 from app.schemas.forecast_override import (
     ForecastOverrideApplyRequest,
     ForecastOverrideApplyResponse,
@@ -49,7 +50,9 @@ router = APIRouter(prefix="/forecast/overrides", tags=["forecast_overrides"])
 
 @router.post("/apply", response_model=ForecastOverrideApplyResponse)
 def post_apply(
-    req: ForecastOverrideApplyRequest, db: Session = Depends(get_db)
+    req: ForecastOverrideApplyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
 ) -> ForecastOverrideApplyResponse:
     def _idempotent(db: Session, log_id: str) -> ForecastOverrideApplyResponse:
         row = (
@@ -85,6 +88,7 @@ def post_apply(
             new_value=token.new_value,
             expected_version=token.expected_version,
             conversation_id=token.conversation_id,
+            actor=user.username,
         )
         return result, result.log_id
 
@@ -177,7 +181,11 @@ def list_overrides(
 
 
 @router.post("/{log_id}/undo", response_model=ForecastOverrideUndoResponse)
-def post_undo(log_id: str, db: Session = Depends(get_db)) -> ForecastOverrideUndoResponse:
+def post_undo(
+    log_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
+) -> ForecastOverrideUndoResponse:
     try:
         result = undo_override(db, log_id)
     except ChangeNotFound:

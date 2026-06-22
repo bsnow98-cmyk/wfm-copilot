@@ -71,10 +71,12 @@ def _code(client, path: str, user: str) -> int:
         ("/leave/decisions/apply", "guest", 403),
         ("/offers/apply", "guest", 403),
         ("/staffing/targets/apply", "guest", 403),
+        ("/forecast/overrides/apply", "guest", 403),
         ("/schedules/apply", "guest", 403),
-        # analyst: leave + staffing yes; offers + schedule no
+        # analyst: leave + staffing + forecast yes; offers + schedule no
         ("/leave/decisions/apply", "apatel", 404),
         ("/staffing/targets/apply", "apatel", 404),
+        ("/forecast/overrides/apply", "apatel", 404),
         ("/offers/apply", "apatel", 403),
         ("/schedules/apply", "apatel", 403),
         # manager: everything
@@ -82,6 +84,7 @@ def _code(client, path: str, user: str) -> int:
         ("/schedules/apply", "jchen", 404),
         ("/leave/decisions/apply", "jchen", 404),
         ("/staffing/targets/apply", "jchen", 404),
+        ("/forecast/overrides/apply", "jchen", 404),
         # admin: everything
         ("/schedules/apply", "admin", 404),
         ("/offers/apply", "admin", 404),
