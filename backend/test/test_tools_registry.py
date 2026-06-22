@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "get_agents_on_aux",
     "get_realtime_alerts",
     "recommend_break_shift",
+    "preview_break_move",
     # Wave 3 — PTO/leave
     "get_pto_balance",
     "get_leave_requests",
