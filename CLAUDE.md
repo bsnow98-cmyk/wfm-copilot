@@ -28,7 +28,7 @@ In QA mode, flag any code that doesn't match DESIGN.md.
 - Backend: Python (FastAPI), Postgres, Anthropic Python SDK with tool-use loop
 - Frontend: Next.js + TypeScript + Tailwind + shadcn/ui (de-facto starter), Recharts for charts, custom Gantt component
 - Tests: pytest (backend), vitest + playwright (frontend)
-- Auth (v1): single shared password gate via Basic-Auth middleware
+- Auth: shared-password Basic-Auth gate + RBAC identity layer — the Basic-Auth *username* is resolved against the `users` table (migration 0022) for a role (viewer/analyst/wfm_manager/admin); `app/identity.py` `require_role(...)` gates write routers; writes record `applied_by=<username>`. Frontend identity picker sets a `wfm_user` cookie the proxy forwards as the Basic username. The shared password is still the only secret (no per-user credentials).
 - Deploy: Vercel (frontend), existing Docker stack (API)
 
 ## Conventions

@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.identity import User, require_role
 from app.schemas.schedule_change import (
     ApplyRequest,
     ApplyResponse,
@@ -49,7 +50,11 @@ router = APIRouter(prefix="/schedules", tags=["schedule_changes"])
 
 
 @router.post("/apply", response_model=ApplyResponse)
-def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyResponse:
+def post_apply(
+    req: ApplyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("wfm_manager")),
+) -> ApplyResponse:
     # Look up + lock the apply_token.
     try:
         token = consume_token(db, req.apply_token)
@@ -97,6 +102,7 @@ def post_apply(req: ApplyRequest, db: Session = Depends(get_db)) -> ApplyRespons
             change_set=change_set,
             conversation_id=token.conversation_id,
             user_msg_id=token.user_msg_id,
+            actor=user.username,
         )
     except StaleVersionError as exc:
         # D-4: 409 with both versions side-by-side. The fresh preview is
@@ -210,9 +216,13 @@ def list_changes(
     response_model=UndoResponse,
     status_code=status.HTTP_200_OK,
 )
-def post_undo(log_id: str, db: Session = Depends(get_db)) -> UndoResponse:
+def post_undo(
+    log_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("wfm_manager")),
+) -> UndoResponse:
     try:
-        undo_log_id, undone_at = undo_change(db, log_id)
+        undo_log_id, undone_at = undo_change(db, log_id, actor=user.username)
     except ChangeNotFound:
         raise HTTPException(404, "change not found")
     except AlreadyUndone:

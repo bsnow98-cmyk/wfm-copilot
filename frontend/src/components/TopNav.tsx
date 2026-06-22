@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { useSkill } from "@/context/SkillContext";
 import { ALL_SKILLS, SKILL_LABEL, SKILLS, type SkillFilter } from "@/lib/skills";
 import { NotificationBell } from "./NotificationBell";
+import { IdentityPicker } from "./IdentityPicker";
 
 const NAV = [
   { href: "/forecast", label: "Forecast" },
@@ -72,6 +73,7 @@ export function TopNav({
         })}
       </nav>
       <div className="ml-auto flex items-center gap-3">
+        <IdentityPicker />
         <SkillPicker />
         <NotificationBell />
         <button

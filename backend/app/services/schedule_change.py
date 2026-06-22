@@ -205,6 +205,7 @@ def apply_change(
     change_set: list[dict[str, Any]],
     conversation_id: str | None,
     user_msg_id: str | None,
+    actor: str = "demo",
 ) -> str:
     """Write the change set + insert the audit log row + return log_id.
 
@@ -276,7 +277,7 @@ def apply_change(
                  schedule_id, change_set, before_state, after_state,
                  undo_window_ends_at)
             VALUES
-                (:at, 'demo', CAST(:conv AS uuid), CAST(:umid AS uuid),
+                (:at, :actor, CAST(:conv AS uuid), CAST(:umid AS uuid),
                  :sched, CAST(:cs AS jsonb), CAST(:before AS jsonb), CAST(:after AS jsonb),
                  :undo_until)
             RETURNING id
@@ -284,6 +285,7 @@ def apply_change(
         ),
         {
             "at": applied_at,
+            "actor": actor,
             "conv": conversation_id,
             "umid": user_msg_id,
             "sched": schedule_id,
@@ -304,6 +306,7 @@ def undo_change(
     log_id: str,
     *,
     conversation_id: str | None = None,
+    actor: str = "demo",
 ) -> tuple[str, datetime]:
     """Reverse an applied change. Writes a new log row whose change_set is
     the inverse and updates the original row's undone_at + undone_by_log_id.
@@ -393,7 +396,7 @@ def undo_change(
                  change_set, before_state, after_state,
                  undo_window_ends_at)
             VALUES
-                (:at, 'demo', CAST(:conv AS uuid), :sched,
+                (:at, :actor, CAST(:conv AS uuid), :sched,
                  CAST(:cs AS jsonb), CAST(:before AS jsonb), CAST(:after AS jsonb),
                  :undo_until)
             RETURNING id
@@ -401,6 +404,7 @@ def undo_change(
         ),
         {
             "at": undone_at,
+            "actor": actor,
             "conv": conversation_id,
             "sched": schedule_id,
             "cs": json.dumps([{"undo_of": str(row["id"])}], default=str),

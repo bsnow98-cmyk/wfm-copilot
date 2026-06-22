@@ -247,6 +247,7 @@ def apply_target_change(
     new_targets: dict[str, Any],
     expected_version: int,
     conversation_id: str | None,
+    actor: str = "demo",
 ) -> ApplyResult:
     """Write the audit row in 'pending' (the recompute itself runs in a
     background job). Raises StaffingNotFound / StaleVersionError. Caller commits
@@ -276,7 +277,7 @@ def apply_target_change(
                  before_targets, after_targets, recompute_status,
                  peak_required_before, undo_window_ends_at)
             VALUES
-                (:at, 'demo', CAST(:conv AS uuid), :sid, :frid,
+                (:at, :actor, CAST(:conv AS uuid), :sid, :frid,
                  CAST(:before AS jsonb), CAST(:after AS jsonb), 'pending',
                  :pb, :undo_until)
             RETURNING id
@@ -284,6 +285,7 @@ def apply_target_change(
         ),
         {
             "at": applied_at,
+            "actor": actor,
             "conv": conversation_id,
             "sid": staffing_id,
             "frid": forecast_run_id,

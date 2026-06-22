@@ -24,6 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
+from app.identity import User, require_role
 from app.schemas.staffing_target import (
     StaffingTargetApplyRequest,
     StaffingTargetApplyResponse,
@@ -53,6 +54,7 @@ def post_apply(
     req: StaffingTargetApplyRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
 ) -> StaffingTargetApplyResponse:
     holder: dict[str, Any] = {}
 
@@ -90,6 +92,7 @@ def post_apply(
             new_targets=token.new_targets,
             expected_version=token.expected_version,
             conversation_id=token.conversation_id,
+            actor=user.username,
         )
         holder["result"] = result
         return result, result.log_id
@@ -195,7 +198,11 @@ def get_status(log_id: str, db: Session = Depends(get_db)) -> StaffingTargetStat
 
 
 @router.post("/{log_id}/undo", response_model=StaffingTargetUndoResponse)
-def post_undo(log_id: str, db: Session = Depends(get_db)) -> StaffingTargetUndoResponse:
+def post_undo(
+    log_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "wfm_manager")),
+) -> StaffingTargetUndoResponse:
     try:
         result = undo_target_change(db, log_id)
     except ChangeNotFound:
