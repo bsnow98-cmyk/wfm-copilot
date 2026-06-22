@@ -144,6 +144,216 @@ def mark_consumed(db: Session, token: str, log_id: str) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Leave-decision tokens (Surface #1).
+#
+# Reuse the chat_apply_tokens table via target_kind='leave'. The schedule
+# columns stay NULL; the leave context (request_id, decision, note, version)
+# rides in change_set, and consumption is tracked by consumed_leave_log_id
+# (consumed_log_id's FK points at the wrong table — schedule_change_log).
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ConsumedLeaveToken:
+    request_id: int
+    request_version: int
+    decision: str
+    note: str | None
+    conversation_id: str | None
+    user_msg_id: str | None
+    consumed_log_id: str | None  # set if already consumed (idempotent path)
+
+
+def issue_leave_token(
+    db: Session,
+    *,
+    request_id: int,
+    request_version: int,
+    decision: str,
+    note: str | None = None,
+    conversation_id: str | None = None,
+    user_msg_id: str | None = None,
+) -> IssuedToken:
+    """Mint a single-use token authorizing one leave approve/deny decision.
+
+    The decision + request_version are pinned here at preview time so the apply
+    endpoint writes exactly what the user previewed — the LLM can preview but
+    never mint a token, and never decides.
+    """
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + TOKEN_TTL
+    change_set = {
+        "request_id": request_id,
+        "decision": decision,
+        "note": note,
+        "request_version": request_version,
+    }
+    db.execute(
+        text(
+            """
+            INSERT INTO chat_apply_tokens
+                (token, expires_at, target_kind, change_set,
+                 conversation_id, user_msg_id)
+            VALUES
+                (:token, :expires, 'leave', CAST(:cs AS jsonb),
+                 CAST(:conv AS uuid), CAST(:umid AS uuid))
+            """
+        ),
+        {
+            "token": token,
+            "expires": expires_at,
+            "cs": _json_dumps(change_set),
+            "conv": conversation_id,
+            "umid": user_msg_id,
+        },
+    )
+    return IssuedToken(token=token, schedule_version=request_version, expires_at=expires_at)
+
+
+def consume_leave_token(db: Session, token: str) -> ConsumedLeaveToken:
+    """Lock-for-update a leave token. Returns even if already consumed so the
+    apply endpoint can fold a duplicate request into the original 200."""
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT change_set, expires_at, consumed_at, consumed_leave_log_id,
+                       conversation_id, user_msg_id, target_kind
+                FROM chat_apply_tokens
+                WHERE token = :token
+                FOR UPDATE
+                """
+            ),
+            {"token": token},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise TokenNotFound("Unknown apply_token")
+    if row["target_kind"] != "leave":
+        raise TokenNotFound("apply_token is not a leave-decision token")
+    if row["consumed_at"] is None and row["expires_at"] < datetime.now(timezone.utc):
+        raise TokenExpired("apply_token expired (5-minute TTL)")
+
+    cs = row["change_set"] or {}
+    return ConsumedLeaveToken(
+        request_id=int(cs["request_id"]),
+        request_version=int(cs["request_version"]),
+        decision=str(cs["decision"]),
+        note=cs.get("note"),
+        conversation_id=str(row["conversation_id"]) if row["conversation_id"] else None,
+        user_msg_id=str(row["user_msg_id"]) if row["user_msg_id"] else None,
+        consumed_log_id=(
+            str(row["consumed_leave_log_id"]) if row["consumed_leave_log_id"] else None
+        ),
+    )
+
+
+def mark_leave_consumed(db: Session, token: str, log_id: str) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE chat_apply_tokens
+            SET consumed_at = NOW(), consumed_leave_log_id = CAST(:log_id AS uuid)
+            WHERE token = :token
+            """
+        ),
+        {"token": token, "log_id": log_id},
+    )
+
+
+# --------------------------------------------------------------------------
+# Offer tokens (Surface #2 — OT/VTO publish).
+#
+# target_kind='offer'; the full offer spec rides in change_set. An offer is a
+# create, so there's no version to pin — single-use is the only guard needed.
+# Consumption tracked by consumed_offer_id.
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ConsumedOfferToken:
+    spec: dict[str, Any]
+    conversation_id: str | None
+    user_msg_id: str | None
+    consumed_offer_id: int | None  # set if already consumed (idempotent path)
+
+
+def issue_offer_token(
+    db: Session,
+    *,
+    spec: dict[str, Any],
+    conversation_id: str | None = None,
+    user_msg_id: str | None = None,
+) -> IssuedToken:
+    """Mint a single-use token authorizing publication of one OT/VTO offer.
+    `spec` is the full offer the user previewed (kind, window, targets, slots)."""
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + TOKEN_TTL
+    db.execute(
+        text(
+            """
+            INSERT INTO chat_apply_tokens
+                (token, expires_at, target_kind, change_set,
+                 conversation_id, user_msg_id)
+            VALUES
+                (:token, :expires, 'offer', CAST(:cs AS jsonb),
+                 CAST(:conv AS uuid), CAST(:umid AS uuid))
+            """
+        ),
+        {
+            "token": token,
+            "expires": expires_at,
+            "cs": _json_dumps(spec),
+            "conv": conversation_id,
+            "umid": user_msg_id,
+        },
+    )
+    return IssuedToken(token=token, schedule_version=0, expires_at=expires_at)
+
+
+def consume_offer_token(db: Session, token: str) -> ConsumedOfferToken:
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT change_set, expires_at, consumed_at, consumed_offer_id,
+                       conversation_id, user_msg_id, target_kind
+                FROM chat_apply_tokens
+                WHERE token = :token
+                FOR UPDATE
+                """
+            ),
+            {"token": token},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise TokenNotFound("Unknown apply_token")
+    if row["target_kind"] != "offer":
+        raise TokenNotFound("apply_token is not an offer token")
+    if row["consumed_at"] is None and row["expires_at"] < datetime.now(timezone.utc):
+        raise TokenExpired("apply_token expired (5-minute TTL)")
+    return ConsumedOfferToken(
+        spec=row["change_set"] or {},
+        conversation_id=str(row["conversation_id"]) if row["conversation_id"] else None,
+        user_msg_id=str(row["user_msg_id"]) if row["user_msg_id"] else None,
+        consumed_offer_id=int(row["consumed_offer_id"]) if row["consumed_offer_id"] else None,
+    )
+
+
+def mark_offer_consumed(db: Session, token: str, offer_id: int) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE chat_apply_tokens
+            SET consumed_at = NOW(), consumed_offer_id = :oid
+            WHERE token = :token
+            """
+        ),
+        {"token": token, "oid": offer_id},
+    )
+
+
 def _json_dumps(value: Any) -> str:
     import json
     return json.dumps(value, default=str)

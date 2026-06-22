@@ -26,6 +26,24 @@ export type GanttAgent = {
   segments: GanttSegment[];
 };
 
+export type LeaveDecisionPreview = {
+  request_id: number;
+  decision: "approve" | "deny";
+  request_version: number;
+  label: string;
+  note?: string | null;
+  pto_hours?: number | null;
+};
+
+export type OfferPreview = {
+  kind: "ot" | "vto";
+  slots: number;
+  n_targets: number;
+  window_label: string;
+  target_date: string;
+  message?: string | null;
+};
+
 export type Scenario = {
   name: string;
   required_by_interval: number[];
@@ -47,6 +65,12 @@ export type ToolResponse =
       title?: string;
       columns: string[];
       rows: (string | number)[][];
+      // Surfaces #1/#2 — present only when this table comes from a preview
+      // tool. The renderer shows the matching write affordance when apply_token
+      // plus the relevant context block are set.
+      apply_token?: string;
+      leave_decision?: LeaveDecisionPreview; // preview_leave_decision (#1)
+      offer?: OfferPreview; // preview_offer (#2)
     }
   | {
       render: "gantt";

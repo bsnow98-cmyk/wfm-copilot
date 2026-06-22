@@ -2,8 +2,12 @@
 preview_schedule_change tool — read-only diff preview.
 
 Loads the existing schedule for a date and returns the gantt with one or more
-proposed segment changes overlaid. PURE PREVIEW — does not write to the DB.
-The mutating apply path is deferred (TODOS — D).
+proposed segment changes overlaid. This tool itself never writes to the DB —
+it's read-only. But when the preview targets a writable schedule it also mints
+an apply_token + schedule_version (see below), which the frontend's Apply
+button presents to POST /schedules/apply. The mutating apply path (cherry-pick
+D) is implemented in app/routers/schedule_changes.py + app/services/apply_tokens.py;
+the LLM can preview but can never apply directly.
 """
 from __future__ import annotations
 
@@ -90,6 +94,14 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     day_start = datetime.combine(target, datetime.min.time(), tzinfo=timezone.utc)
     day_end = day_start + timedelta(days=1)
 
+    # Scope the existing-segment load to the SAME schedule the apply will
+    # target (the one find_schedule_for_date picked). Without this predicate
+    # the query merged segments from every schedule whose range covers the
+    # date — so when two schedules overlap a date, the preview showed a union
+    # the apply could never produce, and a real edit could summarize as "No
+    # effective change." When schedule_id is None (no schedule covers the
+    # date) the CAST(NULL) yields zero rows: an empty roster, no apply token,
+    # which is the honest preview. CAST avoids psycopg3's untyped-NULL error.
     rows = (
         db.execute(
             text(
@@ -98,11 +110,12 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
                        s.segment_type, s.start_time, s.end_time
                 FROM shift_segments s
                 JOIN agents a ON a.id = s.agent_id
-                WHERE s.start_time < :end AND s.end_time > :start
+                WHERE s.schedule_id = CAST(:sched AS BIGINT)
+                  AND s.start_time < :end AND s.end_time > :start
                 ORDER BY a.full_name, s.start_time
                 """
             ),
-            {"start": day_start, "end": day_end},
+            {"sched": schedule_id, "start": day_start, "end": day_end},
         )
         .mappings()
         .all()
@@ -126,8 +139,8 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
     # proposed segment so the user can still see the preview.
     for ch in changes:
         agent_id = ch["agent_id"]
-        proposed_start = datetime.fromisoformat(ch["start"])
-        proposed_end = datetime.fromisoformat(ch["end"])
+        proposed_start = _parse_iso_utc(ch["start"])
+        proposed_end = _parse_iso_utc(ch["end"])
         if agent_id not in by_agent:
             by_agent[agent_id] = {
                 "id": agent_id,
@@ -178,6 +191,28 @@ def handler(args: dict[str, Any], db: Session) -> dict[str, Any]:
 
 
 def _overlaps(a_start: str, a_end: str, b_start: datetime, b_end: datetime) -> bool:
-    a0 = datetime.fromisoformat(a_start)
-    a1 = datetime.fromisoformat(a_end)
-    return a0 < b_end and a1 > b_start
+    # Normalize BOTH sides to tz-aware UTC. The segment side arrives as ISO
+    # strings (tz-aware, from Postgres timestamptz); the proposed side may be
+    # naive if a caller forgot to coerce it. Coercing here makes the function
+    # safe no matter how it's called.
+    a0 = _parse_iso_utc(a_start)
+    a1 = _parse_iso_utc(a_end)
+    b0 = _coerce_utc(b_start)
+    b1 = _coerce_utc(b_end)
+    return a0 < b1 and a1 > b0
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    """Parse an ISO datetime, treating a naive value as UTC.
+
+    The LLM supplies naive datetimes (its tool schema just says "ISO
+    datetime"), while DB segment times round-trip through Postgres `timestamptz`
+    and come back tz-aware. Comparing the two raises TypeError. We coerce naive
+    → UTC, matching `schedule_change._parse_dt` so preview and apply agree on
+    what "17:00" means.
+    """
+    return _coerce_utc(datetime.fromisoformat(value))
+
+
+def _coerce_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)

@@ -20,7 +20,9 @@ from app.routers import (
     health,
     ingest,
     intraday,
+    leave_decisions,
     notifications,
+    offers,
     schedule_changes,
     schedules,
     skills,
@@ -69,6 +71,8 @@ app.include_router(forecasts.router)
 app.include_router(staffing.router)
 app.include_router(schedules.router)
 app.include_router(schedule_changes.router)
+app.include_router(leave_decisions.router)
+app.include_router(offers.router)
 app.include_router(skills.router)
 app.include_router(anomalies.router)
 app.include_router(chat.router)

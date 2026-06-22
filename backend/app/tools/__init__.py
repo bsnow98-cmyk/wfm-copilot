@@ -38,6 +38,7 @@ from app.tools import (
     get_occupancy,
     get_top_risks,
     recommend_ot,
+    preview_offer,
     recommend_skill_rebalance,
     recommend_vto,
     # Wave 3 — adherence
@@ -54,6 +55,7 @@ from app.tools import (
     check_leave_feasibility,
     get_leave_requests,
     get_pto_balance,
+    preview_leave_decision,
     recommend_leave_approval,
     # Wave 4 — performance
     get_agent_performance,
@@ -94,6 +96,7 @@ _MODULES = [
     recommend_ot,
     find_shift_coverage,
     recommend_skill_rebalance,
+    preview_offer,
     get_occupancy,
     # Wave 3 — adherence
     get_adherence,
@@ -109,6 +112,7 @@ _MODULES = [
     get_pto_balance,
     get_leave_requests,
     check_leave_feasibility,
+    preview_leave_decision,
     recommend_leave_approval,
     # Wave 4 — performance
     get_agent_performance,
