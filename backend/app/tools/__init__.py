@@ -40,6 +40,7 @@ from app.tools import (
     preview_forecast_override,
     recommend_ot,
     preview_offer,
+    preview_staffing_target,
     recommend_skill_rebalance,
     recommend_vto,
     # Wave 3 — adherence
@@ -100,6 +101,7 @@ _MODULES = [
     recommend_skill_rebalance,
     preview_offer,
     preview_forecast_override,
+    preview_staffing_target,
     get_occupancy,
     # Wave 3 — adherence
     get_adherence,

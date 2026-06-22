@@ -273,6 +273,54 @@ def notify_forecast_override_undone(
     )
 
 
+def notify_staffing_recomputed(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    staffing_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="staffing_recomputed",
+            source="chat_apply",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "staffing_id": staffing_id,
+            },
+        ),
+    )
+
+
+def notify_staffing_target_undone(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    staffing_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="staffing_target_undone",
+            source="chat_undo",
+            conversation_id=conversation_id,
+            payload={
+                "render": "text",
+                "content": summary,
+                "log_id": log_id,
+                "staffing_id": staffing_id,
+            },
+        ),
+    )
+
+
 # --------------------------------------------------------------------------
 # Read-side
 # --------------------------------------------------------------------------

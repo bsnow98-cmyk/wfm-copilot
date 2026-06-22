@@ -51,6 +51,12 @@ export type ForecastOverridePreview = {
   proposed: number;
 };
 
+export type StaffingTargetPreview = {
+  queue: string;
+  peak_before: number;
+  peak_after_est: number;
+};
+
 export type Scenario = {
   name: string;
   required_by_interval: number[];
@@ -79,6 +85,7 @@ export type ToolResponse =
       leave_decision?: LeaveDecisionPreview; // preview_leave_decision (#1)
       offer?: OfferPreview; // preview_offer (#2)
       forecast_override?: ForecastOverridePreview; // preview_forecast_override (#4)
+      staffing_target?: StaffingTargetPreview; // preview_staffing_target (#5)
     }
   | {
       render: "gantt";
