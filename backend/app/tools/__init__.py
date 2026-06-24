@@ -57,8 +57,11 @@ from app.tools import (
     recommend_break_shift,
     # Wave 3 — PTO/leave
     check_leave_feasibility,
+    get_bid_round,
     get_leave_requests,
     get_pto_balance,
+    get_vacation_bids,
+    preview_award_bids,
     preview_leave_decision,
     recommend_leave_approval,
     # Wave 4 — performance
@@ -122,6 +125,9 @@ _MODULES = [
     check_leave_feasibility,
     preview_leave_decision,
     recommend_leave_approval,
+    get_bid_round,
+    get_vacation_bids,
+    preview_award_bids,
     # Wave 4 — performance
     get_agent_performance,
     rank_agents,

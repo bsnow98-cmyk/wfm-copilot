@@ -30,6 +30,7 @@ from app.routers import (
     staffing,
     staffing_targets,
     users,
+    vacation,
 )
 
 settings = get_settings()
@@ -84,6 +85,7 @@ app.include_router(chat.router)
 app.include_router(intraday.router)
 app.include_router(notifications.router)
 app.include_router(users.router)
+app.include_router(vacation.router)
 
 
 @app.on_event("startup")
