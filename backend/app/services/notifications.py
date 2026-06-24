@@ -321,6 +321,43 @@ def notify_staffing_target_undone(
     )
 
 
+def notify_vacation_published(
+    db: Session,
+    *,
+    summary: str,
+    round_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="vacation_published",
+            source="chat_apply",
+            conversation_id=conversation_id,
+            payload={"render": "text", "content": summary, "round_id": round_id},
+        ),
+    )
+
+
+def notify_vacation_award_undone(
+    db: Session,
+    *,
+    summary: str,
+    log_id: str,
+    round_id: int,
+    conversation_id: str | None,
+) -> str | None:
+    return _default_sink.send(
+        db,
+        Notification(
+            category="vacation_award_undone",
+            source="chat_undo",
+            conversation_id=conversation_id,
+            payload={"render": "text", "content": summary, "log_id": log_id, "round_id": round_id},
+        ),
+    )
+
+
 # --------------------------------------------------------------------------
 # Read-side
 # --------------------------------------------------------------------------

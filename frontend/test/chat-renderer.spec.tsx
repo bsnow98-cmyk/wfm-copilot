@@ -175,4 +175,27 @@ describe("ToolResponseRenderer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/background job/)).toBeInTheDocument();
   });
+
+  it("renders an Award affordance when a table carries a vacation_award", () => {
+    const sample: ToolResponse = {
+      render: "table",
+      title: "Award preview — round 1",
+      columns: ["Seniority", "Agent", "Week"],
+      rows: [[1, "Adams", "2027-01-04"]],
+      apply_token: "tok-vac",
+      vacation_award: {
+        round_id: 1,
+        n_awarded: 42,
+        n_agents: 30,
+        n_zero_win: 5,
+        n_denied: 18,
+        weeks_at_capacity: 6,
+      },
+    };
+    render(<ToolResponseRenderer response={sample} />);
+    expect(
+      screen.getByRole("button", { name: /Award 42 weeks to 30 agents/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/5 get nothing · 6 weeks maxed/)).toBeInTheDocument();
+  });
 });

@@ -57,6 +57,15 @@ export type StaffingTargetPreview = {
   peak_after_est: number;
 };
 
+export type VacationAwardPreview = {
+  round_id: number;
+  n_awarded: number;
+  n_agents: number;
+  n_zero_win: number;
+  n_denied: number;
+  weeks_at_capacity: number;
+};
+
 export type Scenario = {
   name: string;
   required_by_interval: number[];
@@ -86,6 +95,7 @@ export type ToolResponse =
       offer?: OfferPreview; // preview_offer (#2)
       forecast_override?: ForecastOverridePreview; // preview_forecast_override (#4)
       staffing_target?: StaffingTargetPreview; // preview_staffing_target (#5)
+      vacation_award?: VacationAwardPreview; // preview_award_bids (vacation bidding)
     }
   | {
       render: "gantt";

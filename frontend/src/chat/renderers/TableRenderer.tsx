@@ -7,11 +7,13 @@ import type {
   OfferPreview,
   StaffingTargetPreview,
   ToolResponse,
+  VacationAwardPreview,
 } from "../types";
 import { applyLeaveDecision, LeaveApplyError } from "@/lib/leaveDecision";
 import { publishOffer, OfferApplyError } from "@/lib/offerApply";
 import { applyForecastOverride, ForecastOverrideError } from "@/lib/forecastOverride";
 import { applyStaffingTarget, pollStaffingStatus } from "@/lib/staffingTarget";
+import { awardVacationBids, VacationAwardError } from "@/lib/vacationAward";
 
 export function TableRenderer({
   response,
@@ -80,7 +82,75 @@ export function TableRenderer({
           target={response.staffing_target}
         />
       ) : null}
+      {response.apply_token && response.vacation_award ? (
+        <VacationAwardAffordance
+          applyToken={response.apply_token}
+          award={response.vacation_award}
+        />
+      ) : null}
     </figure>
+  );
+}
+
+function VacationAwardAffordance({
+  applyToken,
+  award,
+}: {
+  applyToken: string;
+  award: VacationAwardPreview;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "awarding" }
+    | { kind: "awarded"; nAwarded: number }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  async function handleAward() {
+    setState({ kind: "awarding" });
+    try {
+      const out = await awardVacationBids(award.round_id, applyToken);
+      setState({ kind: "awarded", nAwarded: out.n_awarded });
+    } catch (err) {
+      const message =
+        err instanceof VacationAwardError || err instanceof Error
+          ? err.message
+          : "Award failed for an unknown reason.";
+      setState({ kind: "error", message });
+    }
+  }
+
+  if (state.kind === "awarded") {
+    return (
+      <div className="px-4 py-2 border-t border-border-default text-xs text-text-muted">
+        Awarded <span data-mono>{state.nAwarded}</span> weeks. Committed silently —
+        review, then publish to notify agents. Undoable for 24 hours.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2 border-t border-border-default flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handleAward}
+        disabled={state.kind === "awarding"}
+        className="text-sm px-3 py-1.5 rounded-sm bg-accent text-white disabled:bg-border-strong"
+        title={`Award ${award.n_awarded} weeks to ${award.n_agents} agents`}
+      >
+        {state.kind === "awarding"
+          ? "Awarding…"
+          : `Award ${award.n_awarded} weeks to ${award.n_agents} agent${award.n_agents === 1 ? "" : "s"}`}
+      </button>
+      {state.kind === "error" ? (
+        <span className="text-xs text-severity-high">{state.message}</span>
+      ) : (
+        <span className="text-xs text-text-muted">
+          {award.n_zero_win} get nothing · {award.weeks_at_capacity} weeks maxed. Commits
+          silently (publish notifies separately); undoable 24h. Manager only.
+        </span>
+      )}
+    </div>
   );
 }
 

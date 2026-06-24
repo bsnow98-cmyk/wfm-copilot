@@ -567,6 +567,94 @@ def mark_staffing_consumed(db: Session, token: str, log_id: str) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Vacation-award tokens (vacation bidding).
+#
+# target_kind='vacation_award'; change_set pins {round_id, expected_version}.
+# Consumption tracked by consumed_vacation_log_id.
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ConsumedVacationToken:
+    round_id: int
+    expected_version: int
+    conversation_id: str | None
+    user_msg_id: str | None
+    consumed_log_id: str | None
+
+
+def issue_vacation_token(
+    db: Session,
+    *,
+    round_id: int,
+    expected_version: int,
+    conversation_id: str | None = None,
+    user_msg_id: str | None = None,
+) -> IssuedToken:
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + TOKEN_TTL
+    change_set = {"round_id": round_id, "expected_version": expected_version}
+    db.execute(
+        text(
+            """
+            INSERT INTO chat_apply_tokens
+                (token, expires_at, target_kind, change_set, conversation_id, user_msg_id)
+            VALUES
+                (:token, :expires, 'vacation_award', CAST(:cs AS jsonb),
+                 CAST(:conv AS uuid), CAST(:umid AS uuid))
+            """
+        ),
+        {"token": token, "expires": expires_at, "cs": _json_dumps(change_set),
+         "conv": conversation_id, "umid": user_msg_id},
+    )
+    return IssuedToken(token=token, schedule_version=expected_version, expires_at=expires_at)
+
+
+def consume_vacation_token(db: Session, token: str) -> ConsumedVacationToken:
+    row = (
+        db.execute(
+            text(
+                """
+                SELECT change_set, expires_at, consumed_at, consumed_vacation_log_id,
+                       conversation_id, user_msg_id, target_kind
+                FROM chat_apply_tokens WHERE token = :token FOR UPDATE
+                """
+            ),
+            {"token": token},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise TokenNotFound("Unknown apply_token")
+    if row["target_kind"] != "vacation_award":
+        raise TokenNotFound("apply_token is not a vacation-award token")
+    if row["consumed_at"] is None and row["expires_at"] < datetime.now(timezone.utc):
+        raise TokenExpired("apply_token expired (5-minute TTL)")
+    cs = row["change_set"] or {}
+    return ConsumedVacationToken(
+        round_id=int(cs["round_id"]),
+        expected_version=int(cs["expected_version"]),
+        conversation_id=str(row["conversation_id"]) if row["conversation_id"] else None,
+        user_msg_id=str(row["user_msg_id"]) if row["user_msg_id"] else None,
+        consumed_log_id=(
+            str(row["consumed_vacation_log_id"]) if row["consumed_vacation_log_id"] else None
+        ),
+    )
+
+
+def mark_vacation_consumed(db: Session, token: str, log_id: str) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE chat_apply_tokens
+            SET consumed_at = NOW(), consumed_vacation_log_id = CAST(:log_id AS uuid)
+            WHERE token = :token
+            """
+        ),
+        {"token": token, "log_id": log_id},
+    )
+
+
 def _json_dumps(value: Any) -> str:
     import json
     return json.dumps(value, default=str)

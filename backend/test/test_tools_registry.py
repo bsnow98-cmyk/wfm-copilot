@@ -53,6 +53,9 @@ EXPECTED_TOOLS = {
     "check_leave_feasibility",
     "preview_leave_decision",
     "recommend_leave_approval",
+    "get_bid_round",
+    "get_vacation_bids",
+    "preview_award_bids",
     # Wave 4 — performance
     "get_agent_performance",
     "rank_agents",
