@@ -13,6 +13,7 @@ from app.tools import _REGISTRY, all_definitions, dispatch
 
 EXPECTED_TOOLS = {
     "get_forecast",
+    "get_long_range_forecast",
     "get_staffing",
     "get_schedule",
     "get_anomalies",
